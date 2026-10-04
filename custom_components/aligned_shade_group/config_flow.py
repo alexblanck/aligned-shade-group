@@ -85,7 +85,7 @@ SHADE_FILTER = selector.EntityWithDeviceFilterSelectorConfig(
 )
 
 
-def _group_schema(hass: HomeAssistant, pico_collapsed: bool) -> vol.Schema:
+def _choose_shades_schema(hass: HomeAssistant, pico_collapsed: bool) -> vol.Schema:
     """Schema for the name, the shades and, in a section, an optional Pico.
 
     Aligned shade groups, this one included, aren't offered as shades.
@@ -184,7 +184,7 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Create a group: choose its name, shades and optional Pico."""
-        return await self._async_step_group("user", user_input, suggested={})
+        return await self._async_step_choose_shades("user", user_input, suggested={})
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
@@ -199,9 +199,11 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             FIELD_SHADES: list(self._previous),
             FIELD_PICO: self._pico_suggestion(entry.data[CONF_CONTROLS]),
         }
-        return await self._async_step_group("reconfigure", user_input, suggested)
+        return await self._async_step_choose_shades(
+            "reconfigure", user_input, suggested
+        )
 
-    async def _async_step_group(
+    async def _async_step_choose_shades(
         self,
         step_id: str,
         user_input: dict[str, Any] | None,
@@ -210,7 +212,7 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         """Choose the name, shades and Pico, then go on to the first shade."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            if error := self._choose(user_input):
+            if error := self._choose_shades(user_input):
                 errors["base"] = error
             else:
                 return await self.async_step_shade()
@@ -219,14 +221,14 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(
-                _group_schema(self.hass, pico_collapsed=not has_pico),
+                _choose_shades_schema(self.hass, pico_collapsed=not has_pico),
                 user_input or suggested,
             ),
             errors=errors,
             description_placeholders={"name": suggested.get(FIELD_NAME, "")},
         )
 
-    def _choose(self, user_input: dict[str, Any]) -> str | None:
+    def _choose_shades(self, user_input: dict[str, Any]) -> str | None:
         """Take the chosen name, shades and Pico, or return an error key."""
         if error := _validate_shades(self.hass, user_input[FIELD_SHADES]):
             return error
