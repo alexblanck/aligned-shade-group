@@ -22,6 +22,7 @@ from .sim import (
     GROUP,
     HEIGHT_TOLERANCE,
     STEP_S,
+    Roll,
     ShadeSpec,
     build_room,
     matched_rolls,
@@ -180,14 +181,14 @@ async def test_different_tops_and_sills(
         hass,
         freezer,
         [
-            ShadeSpec(
+            ShadeSpec.even(
                 name="left",
                 closed_height=10,
                 open_height=60,
                 travel_time_s=25,
                 position_pct=0,
             ),
-            ShadeSpec(
+            ShadeSpec.even(
                 name="right",
                 closed_height=20,
                 open_height=80,
@@ -326,21 +327,21 @@ async def test_open_and_close_from_shuffled_positions(
 ) -> None:
     # Three shades of different sizes and speeds, starting out of line.
     specs = [
-        ShadeSpec(
+        ShadeSpec.even(
             name="a",
             closed_height=24,
             open_height=84,
             travel_time_s=30,
             position_pct=start_pcts[0],
         ),
-        ShadeSpec(
+        ShadeSpec.even(
             name="b",
             closed_height=12,
             open_height=84,
             travel_time_s=36,
             position_pct=start_pcts[1],
         ),
-        ShadeSpec(
+        ShadeSpec.even(
             name="c",
             closed_height=30,
             open_height=72,
@@ -570,40 +571,52 @@ async def test_diagnostics_mid_run(
     )
 
 
-# The living room shades this was tuned on: identical rollers (same top,
-# fabric and tube), one with a raised bottom limit. The roll curve was fitted
-# from the taller one measuring 67 1/8 in at 50%; it predicted every other
-# measurement (25/50/75% on both shades) to within 3/8 in.
-ROLL_CURVATURE = 17.5 / 124.75**2
+# The living room shades this was tuned on: identical Serena rollers hanging
+# from the same height, one with a raised bottom limit (about 49 3/4 in rather
+# than 17 7/8 in; both open at 125 1/8 in). The roll was sized from the taller
+# one measuring 67 1/8 in at 50%; it predicts every other measurement
+# (25/50/75% on both shades) to within 3/8 in.
+LIVING_ROOM_ROLL = Roll(tube_diameter=1.625, fabric_thickness=0.02, turns_per_s=0.7)
+LIVING_ROOM_EMPTY_HEIGHT = 6.5
 
 
-def living_room(position_pct: float, calibrated: bool = True) -> list[ShadeSpec]:
-    left_2 = ShadeSpec(
-        name="left_2",
-        closed_height=17.875,
-        open_height=125.125,
-        travel_time_s=24,
-        position_pct=position_pct,
-        roll_curvature=ROLL_CURVATURE,
-    )
-    left_1 = ShadeSpec(
-        name="left_1",
-        closed_height=49.75,
-        open_height=125.125,
-        travel_time_s=0,
-        position_pct=position_pct,
-        roll_curvature=ROLL_CURVATURE,
-    )
-    left_1.travel_time_s = 24 * left_1.full_turns / left_2.full_turns
-    return [left_1, left_2]
+def living_room(position_pct: float) -> list[ShadeSpec]:
+    return [
+        ShadeSpec(
+            name="left_1",
+            roll=LIVING_ROOM_ROLL,
+            empty_height=LIVING_ROOM_EMPTY_HEIGHT,
+            closed_turns=7.7355,
+            open_turns=18.8592,
+            position_pct=position_pct,
+        ),
+        ShadeSpec(
+            name="left_2",
+            roll=LIVING_ROOM_ROLL,
+            empty_height=LIVING_ROOM_EMPTY_HEIGHT,
+            closed_turns=2.1702,
+            open_turns=18.8592,
+            position_pct=position_pct,
+        ),
+    ]
 
 
 async def test_roller_measurements_match_the_simulation() -> None:
     left_1, left_2 = living_room(0)
-    measured = {25: (67, 41.375), 50: (85.125, 67.125), 75: (104.75, 95)}
+    measured = {
+        0: (49.75, 17.875),
+        25: (67, 41.375),
+        50: (85.125, 67.125),
+        75: (104.75, 95),
+        100: (125.125, 125.125),
+    }
     for position_pct, (left_1_height, left_2_height) in measured.items():
-        assert left_1.hemline_at(position_pct) == pytest.approx(left_1_height, abs=0.4)
-        assert left_2.hemline_at(position_pct) == pytest.approx(left_2_height, abs=0.1)
+        assert left_1.hemline_at_position(position_pct) == pytest.approx(
+            left_1_height, abs=0.4
+        )
+        assert left_2.hemline_at_position(position_pct) == pytest.approx(
+            left_2_height, abs=0.1
+        )
 
 
 @pytest.mark.parametrize("target_pct", [25, 50, 75])
@@ -676,8 +689,11 @@ async def test_stop_mid_run_reports_where_the_shades_stopped(
     # The group spans the tallest shade's range, so it matches that shade.
     assert room.group.attributes["current_position"] == stopped["cover.left_2"]
     assert room.group.attributes["aligned"] is True
+    # Shades report whole percents, so compare with the hemline at the
+    # reported position (the attribute is rounded to 0.1).
     for entity_id, height in room.group.attributes["hemline_heights"].items():
-        assert height == pytest.approx(room[entity_id].hemline_height, abs=0.5)
+        reported_height = room[entity_id].spec.hemline_at_position(stopped[entity_id])
+        assert height == pytest.approx(reported_height, abs=0.06)
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
@@ -692,21 +708,14 @@ async def test_identical_rollers_follow_the_group_position(
         freezer,
         [
             ShadeSpec(
-                name="a",
-                closed_height=17.875,
-                open_height=125.125,
-                travel_time_s=24,
+                name=name,
+                roll=LIVING_ROOM_ROLL,
+                empty_height=LIVING_ROOM_EMPTY_HEIGHT,
+                closed_turns=2.1702,
+                open_turns=18.8592,
                 position_pct=100,
-                roll_curvature=ROLL_CURVATURE,
-            ),
-            ShadeSpec(
-                name="b",
-                closed_height=17.875,
-                open_height=125.125,
-                travel_time_s=24,
-                position_pct=100,
-                roll_curvature=ROLL_CURVATURE,
-            ),
+            )
+            for name in ("a", "b")
         ],
         pico=False,
     )

@@ -78,60 +78,105 @@ class Bridge:
             self.freezer.tick(timedelta(seconds=self.latency_s))
 
 
+@dataclass(frozen=True)
+class Roll:
+    """A roller's build: its tube, its fabric and its motor.
+
+    Each turn of the tube winds one more layer of fabric, so the roll's radius
+    grows by `fabric_thickness` per turn, and the fabric wound on is the sum
+    of every turn's circumference. The motor turns the tube `turns_per_s`
+    times a second. A thickness of 0 makes the hemline move evenly.
+    """
+
+    tube_diameter: float
+    fabric_thickness: float
+    turns_per_s: float
+
+    def wound_length(self, turns: float) -> float:
+        """Length of fabric wound onto an empty tube by `turns` turns."""
+        tube_radius = self.tube_diameter / 2
+        radius = tube_radius + self.fabric_thickness * turns
+        # Circumferences grow linearly, so their sum is turns times the mean:
+        #   wound = integral of 2*pi*(r0 + t*n) dn from 0 to N
+        #         = N * 2*pi * (r0 + (r0 + t*N)) / 2 = pi * N * (r0 + radius)
+        return math.pi * turns * (tube_radius + radius)
+
+
 @dataclass
 class ShadeSpec:
-    """A physical shade: geometry as configured, and its true speed.
+    """A physical shade: its roll, where it hangs, and its motor's limits.
 
-    Its position counts motor turns. With `roll_curvature`, it's a roller whose
-    roll shrinks as it unwinds, so each turn lowers the hemline a little less
-    than the one before. Turns are counted from the hemline height where the
-    roll would be fully wound, `roll_top_height` (by default its open height),
-    in units of fabric length at that point; shades sharing a `roll_top_height`
-    and curvature have matching rolls at every hemline height.
+    `empty_height` is where the hemline would be with no fabric on the tube,
+    set by where the roll is mounted and how long the fabric is. The limits
+    count turns wound onto the tube, and the position counts turns between
+    them, so it changes at a constant rate while moving. Shades with the same
+    `Roll` and `empty_height` have matching rolls.
     """
 
     name: str
-    closed_height: float
-    open_height: float
-    travel_time_s: float
+    roll: Roll
+    empty_height: float
+    closed_turns: float
+    open_turns: float
     position_pct: float = 0
-    roll_curvature: float = 0.0
-    roll_top_height: float | None = None
 
-    def _turns_down_to(self, height: float) -> float:
-        top = self.open_height if self.roll_top_height is None else self.roll_top_height
-        drop = top - height
-        c = self.roll_curvature
-        return drop if c == 0 else (1 - (1 - 4 * c * drop) ** 0.5) / (2 * c)
-
-    @property
-    def full_turns(self) -> float:
-        """Turns from open to closed."""
-        return self._turns_down_to(self.closed_height) - self._turns_down_to(
-            self.open_height
+    @classmethod
+    def even(
+        cls,
+        name: str,
+        closed_height: float,
+        open_height: float,
+        travel_time_s: float,
+        position_pct: float = 0,
+    ) -> ShadeSpec:
+        """A shade whose hemline moves evenly, taking `travel_time_s` to open."""
+        tube_diameter = 1.5
+        turns = (open_height - closed_height) / (math.pi * tube_diameter)
+        return cls(
+            name=name,
+            roll=Roll(
+                tube_diameter=tube_diameter,
+                fabric_thickness=0,
+                turns_per_s=turns / travel_time_s,
+            ),
+            empty_height=closed_height,
+            closed_turns=0,
+            open_turns=turns,
+            position_pct=position_pct,
         )
-
-    def hemline_at(self, position_pct: float) -> float:
-        top = self.open_height if self.roll_top_height is None else self.roll_top_height
-        turns = (
-            self._turns_down_to(self.open_height)
-            + (1 - position_pct / 100) * self.full_turns
-        )
-        return top - (turns - self.roll_curvature * turns * turns)
 
     @classmethod
     def from_config(
         cls, config: dict[str, Any], speed: float, position_pct: float = 0
     ) -> ShadeSpec:
-        """A shade matching a setup-flow config (as in `common.SHADES`)."""
-        span = config["open_height"] - config["closed_height"]
-        return cls(
+        """An even shade matching a setup-flow config (as in `common.SHADES`)."""
+        return cls.even(
             name=config["entity_id"].removeprefix("cover."),
             closed_height=config["closed_height"],
             open_height=config["open_height"],
-            travel_time_s=span / speed,
+            travel_time_s=(config["open_height"] - config["closed_height"]) / speed,
             position_pct=position_pct,
         )
+
+    def hemline_at_turns(self, turns: float) -> float:
+        """Hemline height with `turns` turns wound onto the tube."""
+        return self.empty_height + self.roll.wound_length(turns)
+
+    def closed_height(self) -> float:
+        return self.hemline_at_turns(self.closed_turns)
+
+    def open_height(self) -> float:
+        return self.hemline_at_turns(self.open_turns)
+
+    def travel_time_s(self) -> float:
+        """Seconds from closed to open."""
+        return (self.open_turns - self.closed_turns) / self.roll.turns_per_s
+
+    def hemline_at_position(self, position_pct: float) -> float:
+        # Checked against real measurements by
+        # test_roller_measurements_match_the_simulation.
+        span = self.open_turns - self.closed_turns
+        return self.hemline_at_turns(self.closed_turns + position_pct / 100 * span)
 
     @property
     def entity_id(self) -> str:
@@ -168,10 +213,6 @@ class SimShade(CoverEntity):
         return self.position_pct != self.target_pct
 
     @property
-    def hemline_height(self) -> float:
-        return self.spec.hemline_at(self.position_pct)
-
-    @property
     def current_cover_position(self) -> int:
         return self._reported
 
@@ -184,7 +225,7 @@ class SimShade(CoverEntity):
         now = dt_util.utcnow()
         elapsed_s = (now - self._last).total_seconds()
         self._last = now
-        step_pct = elapsed_s * 100 / self.spec.travel_time_s
+        step_pct = elapsed_s * 100 / self.spec.travel_time_s()
         if self.target_pct > self.position_pct:
             self.position_pct = min(self.target_pct, self.position_pct + step_pct)
         elif self.target_pct < self.position_pct:
@@ -329,21 +370,23 @@ class Room:
             flow = await configure(
                 flow["flow_id"],
                 {
-                    "open_height": shade.spec.open_height,
-                    "closed_height": shade.spec.closed_height,
+                    "open_height": shade.spec.open_height(),
+                    "closed_height": shade.spec.closed_height(),
                 },
             )
         assert flow["step_id"] == "travel", flow
         tallest = max(
             self.shades.values(),
-            key=lambda shade: shade.spec.open_height - shade.spec.closed_height,
+            key=lambda shade: shade.spec.open_height() - shade.spec.closed_height(),
         )
         answers: dict[str, Any] = {
             "travel_time_s": self._configured_travel_time_s
-            or tallest.spec.travel_time_s
+            or tallest.spec.travel_time_s()
         }
-        if tallest.spec.roll_curvature:
-            answers["roller_curve"] = {"halfway_height": tallest.spec.hemline_at(50)}
+        if tallest.spec.roll.fabric_thickness:
+            answers["roller_curve"] = {
+                "halfway_height": tallest.spec.hemline_at_position(50)
+            }
         else:
             answers["roller_curve"] = {}
         return await configure(flow["flow_id"], answers)
@@ -403,13 +446,13 @@ class Room:
         specs = {eid: shade.spec for eid, shade in self.shades.items()}
 
         def hemline_height(eid: str) -> float:
-            return specs[eid].hemline_at(positions_pct_by_id[eid])
+            return specs[eid].hemline_at_position(positions_pct_by_id[eid])
 
         best = float("inf")
         for candidate in (hemline_height(eid) for eid in specs):
             worst = max(
                 abs(
-                    min(max(candidate, spec.closed_height), spec.open_height)
+                    min(max(candidate, spec.closed_height()), spec.open_height())
                     - hemline_height(eid)
                 )
                 for eid, spec in specs.items()
@@ -441,40 +484,25 @@ def matched_rolls(position_pct: float) -> list[ShadeSpec]:
     where the hemline moves slower), so the travel time must be tied to the
     measured shade rather than the widest window.
     """
-    # A stronger curve than the living room's, so extension errors show.
-    curvature = 0.0025
-    specs = [
+    # Thicker fabric on a thinner tube than the living room's, so the curve is
+    # stronger and extension errors show. All three hang from the same height.
+    roll = Roll(tube_diameter=1, fabric_thickness=0.1, turns_per_s=0.25)
+    # Limits in turns, about 30-100, 50-125 and 12-60 in.
+    return [
         ShadeSpec(
-            name="tall",
-            closed_height=30,
-            open_height=100,
-            travel_time_s=30,
+            name=name,
+            roll=roll,
+            empty_height=10,
+            closed_turns=closed_turns,
+            open_turns=open_turns,
             position_pct=position_pct,
-            roll_curvature=curvature,
-            roll_top_height=100,
-        ),
-        ShadeSpec(
-            name="high",
-            closed_height=50,
-            open_height=125,
-            travel_time_s=0,
-            position_pct=position_pct,
-            roll_curvature=curvature,
-            roll_top_height=100,
-        ),
-        ShadeSpec(
-            name="low",
-            closed_height=12,
-            open_height=60,
-            travel_time_s=0,
-            position_pct=position_pct,
-            roll_curvature=curvature,
-            roll_top_height=100,
-        ),
+        )
+        for name, closed_turns, open_turns in (
+            ("tall", 4.416, 12.6488),
+            ("high", 7.342, 14.7751),
+            ("low", 0.6006, 8.5704),
+        )
     ]
-    for spec in specs[1:]:
-        spec.travel_time_s = 30 * spec.full_turns / specs[0].full_turns
-    return specs
 
 
 def prefilled_answers(flow: Any) -> dict[str, Any]:

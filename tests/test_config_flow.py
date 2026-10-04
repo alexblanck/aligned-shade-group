@@ -11,6 +11,7 @@ from typing import Any
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant import config_entries
 from homeassistant.components.cover import CoverEntityFeature
+from homeassistant.const import ATTR_SUPPORTED_FEATURES
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -21,7 +22,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.aligned_shade_group.const import DOMAIN
 
-from .common import HIGH_SILL, LOW_SILL, set_shade
+from .common import HIGH_SILL, LOW_SILL
 from .sim import (
     GROUP,
     HEIGHT_TOLERANCE,
@@ -30,6 +31,22 @@ from .sim import (
     prefilled_answers,
     same_tops,
 )
+
+FEATURES = (
+    CoverEntityFeature.OPEN
+    | CoverEntityFeature.CLOSE
+    | CoverEntityFeature.STOP
+    | CoverEntityFeature.SET_POSITION
+)
+
+
+def set_shade(hass: HomeAssistant, entity_id: str, position_pct: int) -> None:
+    """Set a bare fake shade's state, for validation tests."""
+    hass.states.async_set(
+        entity_id,
+        "closed" if position_pct == 0 else "open",
+        {"current_position": position_pct, ATTR_SUPPORTED_FEATURES: FEATURES},
+    )
 
 
 async def start_flow(hass: HomeAssistant) -> dict[str, Any]:
