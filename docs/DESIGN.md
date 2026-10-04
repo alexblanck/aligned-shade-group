@@ -233,6 +233,16 @@ as a physical Pico press, took over), the group stops following its plan. If a
 starting command fails, the plan is abandoned and the error returned to the
 caller.
 
+**Missing devices** — pressing a button that doesn't exist does nothing and
+raises nothing, so the Pico is only used (for a move or a stop) while all three
+of its buttons exist, are enabled and are available; otherwise each shade is
+commanded on its own. Shades or Pico buttons that are disabled, or have neither
+a registry entry nor a state (say, renamed or removed), raise a repair issue
+asking to reconfigure the group. It's checked once Home Assistant has started,
+whenever the registry entry of one of the group's entities changes (under its
+old or new id, so renaming one back clears it), and on every move, and it's
+cleared when nothing is missing.
+
 **Stop** — cancel any pending staggered starts, then:
 - Pico configured and the group believes it is moving → press Pico stop.
 - Otherwise → `stop_cover` on each shade.

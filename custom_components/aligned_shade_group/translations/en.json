@@ -91,5 +91,11 @@
     "abort": {
       "reconfigure_successful": "Saved. The group has been reloaded with its new settings."
     }
+  },
+  "issues": {
+    "entities_missing": {
+      "title": "{name} can't find some of its devices",
+      "description": "These were renamed, removed or disabled: {entities}. Until this is fixed, {name} leaves out missing shades, and moves its shades one by one if its Pico's buttons are missing.\n\nTo fix this, open {name} under Settings → Devices & services → Aligned Shade Group, choose Reconfigure from its menu, and choose its shades and Pico again."
+    }
   }
 }

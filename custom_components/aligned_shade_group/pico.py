@@ -27,6 +27,10 @@ class PicoButtons:
     stop: str
     close: str
 
+    def buttons(self) -> tuple[str, str, str]:
+        """All three button entities."""
+        return (self.open, self.stop, self.close)
+
     def toward(self, direction: Direction) -> str:
         """The button that sends every shade toward that direction's end."""
         return self.open if direction is Direction.OPENING else self.close

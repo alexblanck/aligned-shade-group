@@ -9,12 +9,18 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.components.diagnostics import (
     get_diagnostics_for_config_entry,
     get_diagnostics_for_device,
 )
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
+
+from custom_components.aligned_shade_group.const import (
+    DOMAIN,
+    missing_entities_issue_id,
+)
 
 from .common import HIGH_SILL, LOW_SILL
 from .sim import (
@@ -23,6 +29,7 @@ from .sim import (
     HEIGHT_TOLERANCE,
     STEP_S,
     Roll,
+    Room,
     ShadeSpec,
     build_room,
     matched_rolls,
@@ -214,6 +221,78 @@ async def test_different_tops_and_sills(
     await room.run_until_still()
     assert room.positions_pct_by_id() == {"cover.left": 0, "cover.right": 0}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
+def missing_entities_issue(hass: HomeAssistant, room: Room) -> ir.IssueEntry | None:
+    assert room.entry is not None
+    return ir.async_get(hass).async_get_issue(
+        DOMAIN, missing_entities_issue_id(room.entry.entry_id)
+    )
+
+
+async def test_renamed_pico_button_falls_back_to_each_shade(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Pressing a button that no longer exists does nothing and raises
+    # nothing, so the group must notice instead of waiting for shades that
+    # never start.
+    room = await build_room(hass, freezer, same_tops(100))
+    er.async_get(hass).async_update_entity(
+        "button.pico_stop", new_entity_id="button.pico_stop_renamed"
+    )
+    await hass.async_block_till_done()
+
+    # Level shades would normally close with a Pico press.
+    await room.command("close_cover")
+    await room.run(10)
+    await room.command("stop_cover")
+    await room.run(20)
+
+    assert all(button.presses == 0 for button in room.pico.values())
+    assert all(0 < pct < 100 for pct in room.positions_pct_by_id().values())
+    assert not any(shade.moving for shade in room.shades.values())
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+    assert "not using its Pico" in caplog.text
+    issue = missing_entities_issue(hass, room)
+    assert issue is not None
+    assert issue.translation_placeholders["entities"] == "button.pico_stop"
+
+
+async def test_renamed_shade_is_left_out_and_raised(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, same_tops(0), pico=False)
+    er.async_get(hass).async_update_entity(HIGH_SILL, new_entity_id="cover.renamed")
+    await hass.async_block_till_done()
+
+    await room.command("open_cover")
+    await room.run_until_still()
+
+    # The room still names the renamed shade by its original id.
+    assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 100}
+    issue = missing_entities_issue(hass, room)
+    assert issue is not None
+    assert issue.translation_placeholders["entities"] == HIGH_SILL
+
+
+async def test_renames_raise_and_clear_the_issue_without_a_move(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, same_tops(0))
+    registry = er.async_get(hass)
+
+    registry.async_update_entity(LOW_SILL, new_entity_id="cover.renamed")
+    await room.run(2)
+    issue = missing_entities_issue(hass, room)
+    assert issue is not None
+    assert issue.translation_placeholders["entities"] == LOW_SILL
+
+    # Renamed back to the id the group knows: fixed without reconfiguring.
+    registry.async_update_entity("cover.renamed", new_entity_id=LOW_SILL)
+    await room.run(2)
+    assert missing_entities_issue(hass, room) is None
 
 
 async def test_pico_paired_to_some_shades_is_not_used_yet(

@@ -30,3 +30,8 @@ class ControlType(StrEnum):
     """Values of a control's CONF_TYPE."""
 
     PICO = "pico"
+
+
+def missing_entities_issue_id(entry_id: str) -> str:
+    """The repair issue raised when a group's shades or Pico buttons are missing."""
+    return f"entities_missing_{entry_id}"

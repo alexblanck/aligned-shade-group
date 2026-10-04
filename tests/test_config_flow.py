@@ -15,12 +15,16 @@ from homeassistant.const import ATTR_SUPPORTED_FEATURES
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     get_schema_suggested_value,
 )
 
-from custom_components.aligned_shade_group.const import DOMAIN
+from custom_components.aligned_shade_group.const import (
+    DOMAIN,
+    missing_entities_issue_id,
+)
 
 from .common import HIGH_SILL, LOW_SILL
 from .sim import (
@@ -321,6 +325,34 @@ async def test_shade_picker_offers_only_shades(
     assert config["exclude_entities"] == [GROUP]
     (shade_filter,) = config["filter"]
     assert shade_filter["device_class"] == ["shade", "blind", "shutter"]
+
+
+async def test_reconfigure_fixes_renamed_pico_buttons(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, same_tops(100))
+    assert room.entry is not None
+    issue_id = missing_entities_issue_id(room.entry.entry_id)
+    er.async_get(hass).async_update_entity(
+        "button.pico_stop", new_entity_id="button.pico_stop_renamed"
+    )
+    await hass.async_block_till_done()
+    await room.command("close_cover")  # notices the missing button
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+
+    # Choosing the same Pico again finds its buttons under their new names.
+    flow = await room.start_reconfigure()
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {**prefilled_answers(flow), "pico": {"device_id": room.pico_device_id()}},
+    )
+    flow = await room.answer_shade_steps(flow)
+    await hass.async_block_till_done()
+
+    assert flow["reason"] == "reconfigure_successful", flow
+    (pico,) = room.entry.data["controls"]
+    assert pico["stop"] == "button.pico_stop_renamed"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
 
 
 async def test_reconfigure_mid_run(

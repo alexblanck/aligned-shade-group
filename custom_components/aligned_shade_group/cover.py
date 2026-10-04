@@ -29,6 +29,7 @@ from homeassistant.const import (
     CONF_TYPE,
     SERVICE_SET_COVER_POSITION,
     SERVICE_STOP_COVER,
+    STATE_UNAVAILABLE,
 )
 from homeassistant.core import (
     CALLBACK_TYPE,
@@ -38,12 +39,15 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
 )
+from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
 from .alignment import (
@@ -62,6 +66,7 @@ from .const import (
     CONF_SHADES,
     DOMAIN,
     ControlType,
+    missing_entities_issue_id,
 )
 from .pico import PicoButtons
 
@@ -155,6 +160,7 @@ class AlignedShadeGroup(CoverEntity):
             model="Aligned shade group",
         )
         self._group = group
+        self._entry = entry
         self._pico = pico
         self._entity_ids = [shade.entity_id for shade in group.shades]
         self._positions_pct_by_id: dict[str, int] = {}
@@ -178,6 +184,31 @@ class AlignedShadeGroup(CoverEntity):
         )
         self.async_on_remove(self._abandon_plan)
         self._update_positions()
+        # After startup, so shades without a registry entry have a state.
+        self.async_on_remove(async_at_started(self.hass, self._async_check_missing))
+        # And whenever a shade or Pico button is renamed, removed or disabled.
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                er.EVENT_ENTITY_REGISTRY_UPDATED,
+                self._async_check_missing,
+                event_filter=self._concerns_this_group,
+            )
+        )
+
+    @callback
+    def _concerns_this_group(self, data: er.EventEntityRegistryUpdatedData) -> bool:
+        # Both ids, so renaming one back to its original id counts too.
+        watched = {*self._entity_ids, *(self._pico.buttons() if self._pico else ())}
+        return data["entity_id"] in watched or data.get("old_entity_id") in watched
+
+    @callback
+    def _async_check_missing(self, _hass_or_event: object) -> None:
+        """Recheck for missing entities, once started or after a registry change.
+
+        Called with Home Assistant (at startup) or a registry event; neither
+        is needed.
+        """
+        self._async_update_missing_issue()
 
     @callback
     def _async_member_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -326,6 +357,80 @@ class AlignedShadeGroup(CoverEntity):
             },
         }
 
+    def _missing(self, entity_ids: Iterable[str]) -> list[str]:
+        """Entities that are disabled, or have neither a registry entry nor a
+        state (say, renamed or removed).
+        """
+        registry = er.async_get(self.hass)
+        missing = []
+        for entity_id in entity_ids:
+            entry = registry.async_get(entity_id)
+            if entry is None:
+                if self.hass.states.get(entity_id) is None:
+                    missing.append(entity_id)
+            elif entry.disabled:
+                missing.append(entity_id)
+        return missing
+
+    @callback
+    def _async_update_missing_issue(self) -> list[str]:
+        """Raise or clear the repair issue for missing shades and Pico buttons.
+
+        Fixing them means reconfiguring the group. Returns them.
+        """
+        pico_buttons = self._pico.buttons() if self._pico else ()
+        missing = self._missing([*self._entity_ids, *pico_buttons])
+        issue_id = missing_entities_issue_id(self._entry.entry_id)
+        if not missing:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return []
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="entities_missing",
+            translation_placeholders={
+                "name": self._entry.title,
+                "entities": ", ".join(missing),
+            },
+        )
+        return missing
+
+    @callback
+    def _async_usable_pico(self) -> PicoButtons | None:
+        """The Pico, if its buttons can be pressed right now.
+
+        Pressing a button that doesn't exist does nothing and raises nothing,
+        so without this check the group would wait for shades that never
+        started. Without a usable Pico, shades are commanded one by one.
+        """
+        if self._pico is None:
+            return None
+        if missing := self._missing(self._pico.buttons()):
+            _LOGGER.warning(
+                "%s: not using its Pico, whose buttons are missing or disabled "
+                "(%s); reconfigure the group to choose the Pico again",
+                self.entity_id,
+                ", ".join(missing),
+            )
+            return None
+        unavailable = [
+            button
+            for button in self._pico.buttons()
+            if (state := self.hass.states.get(button)) is None
+            or state.state == STATE_UNAVAILABLE
+        ]
+        if unavailable:
+            _LOGGER.warning(
+                "%s: not using its Pico, whose buttons are unavailable (%s)",
+                self.entity_id,
+                ", ".join(unavailable),
+            )
+            return None
+        return self._pico
+
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open every shade."""
         await self._async_set_group_position(100)
@@ -345,8 +450,9 @@ class AlignedShadeGroup(CoverEntity):
         self.async_write_ha_state()
         # A shade Pico's middle button goes to the favorite position when the
         # shades are stationary, so only press it while we think they're moving.
-        if self._pico and was_moving:
-            await self._async_press(self._pico.stop)
+        pico = self._async_usable_pico()
+        if pico and was_moving:
+            await self._async_press(pico.stop)
         else:
             took_s = await self._async_call(
                 COVER_DOMAIN, SERVICE_STOP_COVER, self._entity_ids
@@ -354,8 +460,8 @@ class AlignedShadeGroup(CoverEntity):
             _LOGGER.debug(
                 "%s: stopped each shade (%s) in %.3fs",
                 self.entity_id,
-                "no Pico"
-                if not self._pico
+                "no usable Pico"
+                if not pico
                 else "not moving, Pico would go to favorite",
                 took_s,
             )
@@ -365,6 +471,7 @@ class AlignedShadeGroup(CoverEntity):
         positions_pct_by_id = self._planning_positions()
         positions_source = "estimated" if self._moving else "reported"
         moving_entity_ids = set(self._running_moves) if self._moving else set()
+        self._async_update_missing_issue()
         if missing := [e for e in self._entity_ids if e not in positions_pct_by_id]:
             _LOGGER.warning(
                 "%s: leaving out shades with no position: %s",
@@ -375,7 +482,7 @@ class AlignedShadeGroup(CoverEntity):
         plan = self._group.plan_moves(
             positions_pct_by_id,
             target_pct=target_pct,
-            pico_available=self._pico is not None,
+            pico_available=self._async_usable_pico() is not None,
             moving_entity_ids=moving_entity_ids,
         )
         direction = self._group_direction(positions_pct_by_id, target_pct)
