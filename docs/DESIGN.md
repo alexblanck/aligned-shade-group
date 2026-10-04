@@ -252,9 +252,14 @@ cleared when nothing is missing.
 - Pico configured and the group believes it is moving → press Pico stop.
 - Otherwise → `stop_cover` on each shade.
 
-Caveat to verify: on a shade Pico the middle button means "stop" while moving
-but "go to favorite" when stationary, so the Pico stop is only pressed while
-the group thinks it's moving.
+On a shade Pico the middle button means "stop" while moving but "go to
+favorite" when stationary, so the Pico stop is only pressed while the group
+thinks it's moving. Verified on Serena shades (pressed through Home Assistant,
+so through the bridge): the decision covers all the Pico's shades at once.
+While any of them is moving, it stops the moving ones and leaves stationary
+ones where they are; only when all are stationary does it go to favorite. So
+stopping partway through a staggered run (some shades arrived or not yet
+started) is safe. The simulator models it the same way.
 
 ## Out of scope (v1)
 
