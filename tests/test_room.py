@@ -729,6 +729,73 @@ async def test_rollers_stay_level_while_moving(
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
+async def test_level_shades_start_together_without_a_pico(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # At 62% and 75% the living room shades are level to within 0.4 in: what
+    # the group calls aligned, and would start with one Pico press. Without a
+    # Pico they should still start together, not a fraction of a second apart.
+    left_1, left_2 = living_room(0)
+    left_1.position_pct, left_2.position_pct = 62, 75
+    room = await build_room(hass, freezer, [left_1, left_2], pico=False)
+    assert room.group.attributes["aligned"] is True
+
+    await room.command("close_cover")
+    await room.run_until_still()
+
+    assert room["cover.left_1"].starts[0][0] == room["cover.left_2"].starts[0][0]
+    assert room.positions_pct_by_id() == {"cover.left_1": 0, "cover.left_2": 0}
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
+async def test_level_followers_start_together(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # "a" and "b" sit level (hemlines 50 and 50.4 in) below "lead" (80 in).
+    # Closing, they're followers, and start together when "lead" reaches them.
+    # All move at 2 in/s.
+    room = await build_room(
+        hass,
+        freezer,
+        [
+            ShadeSpec.even(
+                name="lead",
+                closed_height=20,
+                open_height=80,
+                travel_time_s=30,
+                position_pct=100,
+            ),
+            ShadeSpec.even(
+                name="a",
+                closed_height=10,
+                open_height=60,
+                travel_time_s=25,
+                position_pct=80,
+            ),
+            ShadeSpec.even(
+                name="b",
+                closed_height=30,
+                open_height=70,
+                travel_time_s=20,
+                position_pct=51,
+            ),
+        ],
+        pico=False,
+    )
+
+    await room.command("close_cover")
+    await room.run(16)  # "lead" has reached the others, who have joined it
+    room.history.clear()
+    await room.run_until_still()
+
+    lead_start = room["cover.lead"].starts[0][0]
+    a_start = room["cover.a"].starts[0][0]
+    assert a_start == room["cover.b"].starts[0][0]
+    assert a_start - lead_start == pytest.approx(15, abs=0.5)  # 30 in at 2 in/s
+    # Level from when they joined until each reached its sill.
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
 async def test_position_reports_the_target_while_moving(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:

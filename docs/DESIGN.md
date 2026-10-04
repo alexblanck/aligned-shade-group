@@ -215,6 +215,11 @@ from the same hemline. Press Pico open/close, then immediately send
 **Staggered path** — otherwise. Shades moving up start in order from lowest
 hemline; each one starts when the leader's estimated hemline reaches it (and
 vice versa for moving down). Implemented as delayed `set_position` calls.
+Shades whose hemlines are within the alignment tolerance of each other (the
+same 1% of the group's range used for the Pico and the `aligned` attribute)
+start together, rather than a fraction of a second apart: whole-percent
+positions can't place them more precisely than that anyway. This applies to
+any level group in the move, not just the leader's (`_level_groups`).
 
 Staggered starts: a follower starts once the leader has moved from where it
 started to the follower's hemline; since positions change at a constant rate,

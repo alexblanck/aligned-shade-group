@@ -308,7 +308,8 @@ class AlignmentGroup:
             staggered_move
             for direction_ in Direction
             for staggered_move in _staggered(
-                [move for move in moves if move.direction() is direction_]
+                [move for move in moves if move.direction() is direction_],
+                self._height_tolerance,
             )
         ]
         staggered.sort(key=lambda move: move.delay_s)
@@ -353,28 +354,53 @@ class AlignmentGroup:
         return [shade for shade in self.shades if shade.entity_id in entity_ids]
 
 
-def _staggered(moves: list[Move]) -> list[Move]:
-    """Delay moves in one direction so each starts when the leader reaches it.
+def _level_groups(moves: list[Move], tolerance_height: float) -> list[list[Move]]:
+    """Moves in one direction, grouped by shades that start level.
 
-    The leader is the shade furthest from the target.
+    Groups are ordered from the furthest from the target, as are moves within
+    each group. A shade joins the current group while its hemline is within
+    `tolerance_height` of the group's first shade: the same tolerance the
+    Pico and the aligned check use, so level shades can be started together.
     """
     if not moves:
         return []
     sign = 1 if moves[0].direction() is Direction.OPENING else -1
-    leader = min(moves, key=lambda move: sign * move.from_height())
-    return [
-        replace(
-            move,
-            # How long the leader takes to move from where it starts to the
-            # follower's hemline: positions change at a constant rate.
-            delay_s=abs(
-                leader.shade.position_for_height(move.from_height()) - leader.from_pct
+    groups: list[list[Move]] = []
+    for move in sorted(moves, key=lambda move: sign * move.from_height()):
+        if groups and (
+            abs(move.from_height() - groups[-1][0].from_height()) <= tolerance_height
+        ):
+            groups[-1].append(move)
+        else:
+            groups.append([move])
+    return groups
+
+
+def _staggered(moves: list[Move], tolerance_height: float) -> list[Move]:
+    """Delay moves in one direction so each starts when the leader reaches it.
+
+    The leader is the shade furthest from the target. Each group of shades
+    starting level (see `_level_groups`) starts together, when the leader
+    reaches the group's first shade.
+    """
+    groups = _level_groups(moves, tolerance_height)
+    if not groups:
+        return []
+    leader = groups[0][0]
+    staggered: list[Move] = []
+    for group in groups:
+        # How long the leader takes to move from where it starts to this
+        # group's hemline: positions change at a constant rate.
+        delay_s = (
+            abs(
+                leader.shade.position_for_height(group[0].from_height())
+                - leader.from_pct
             )
             / 100
-            * leader.shade.travel_time_s,
+            * leader.shade.travel_time_s
         )
-        for move in moves
-    ]
+        staggered.extend(replace(move, delay_s=delay_s) for move in group)
+    return staggered
 
 
 def _pico_plan(direction: Direction, moves: list[Move]) -> Plan:
