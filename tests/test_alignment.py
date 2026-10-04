@@ -12,19 +12,20 @@ from custom_components.aligned_cover_group.alignment import (
 )
 from custom_components.aligned_cover_group.roll_profile import RollProfile
 
-from .common import SHADES, SPEED
+from . import common
 
+# The shades in common.SHADES; the low-sill one is the tallest, so it's the
+# measured one.
 GROUP = matched_roll_group(
-    (
+    [
+        ShadeConfig(entity_id=common.HIGH_SILL, closed_height=24, open_height=84),
         ShadeConfig(
-            entity_id=config["entity_id"],
-            closed_height=config["closed_height"],
-            open_height=config["open_height"],
-        )
-        for config in SHADES
-    ),
-    tallest_travel_time_s=max(c["open_height"] - c["closed_height"] for c in SHADES)
-    / SPEED,
+            entity_id=common.LOW_SILL,
+            closed_height=12,
+            open_height=84,
+            travel_time_s=72 / common.SPEED,
+        ),
+    ]
 )
 HIGH_SILL, LOW_SILL = GROUP.shades
 

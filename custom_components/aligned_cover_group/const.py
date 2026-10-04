@@ -2,16 +2,21 @@
 
 DOMAIN = "aligned_cover_group"
 
-CONF_COVERS = "covers"
-CONF_OPEN_HEIGHT = "open_height"
+# Each shade's settings. The measured shade (the tallest when set up) also has
+# its travel time and, optionally, its hemline height at 50%.
+CONF_SHADES = "shades"
 CONF_CLOSED_HEIGHT = "closed_height"
+CONF_OPEN_HEIGHT = "open_height"
 CONF_TRAVEL_TIME_S = "travel_time_s"
-# The tallest shade's hemline height at 50%, describing how its roll curves.
 CONF_HALFWAY_HEIGHT = "halfway_height"
-CONF_PICO_OPEN = "pico_open"
-CONF_PICO_STOP = "pico_stop"
-CONF_PICO_CLOSE = "pico_close"
 
-PICO_BUTTONS = (CONF_PICO_OPEN, CONF_PICO_STOP, CONF_PICO_CLOSE)
-# Form section holding the Pico buttons; stored flattened in the options.
+# Ways to start several shades at once through the bridge, each with its
+# `type` and the shades (CONF_SHADES) it moves. Only Picos so far, with the
+# button entities found from the Pico chosen in the setup form.
+CONF_CONTROLS = "controls"
+CONTROL_PICO = "pico"
+CONF_PICO_OPEN = "open"
+CONF_PICO_STOP = "stop"
+CONF_PICO_CLOSE = "close"
+# The setup form's section for a Pico paired to every shade in the group.
 PICO_SECTION = "pico"

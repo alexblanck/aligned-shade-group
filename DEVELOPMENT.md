@@ -10,6 +10,7 @@ How to work on Aligned Cover Group. For how alignment and motion work, see
 | `custom_components/aligned_cover_group/roll_profile.py` | Pure math: how a roller's hemline height follows its position (`RollProfile`), and a shade's view of one. No Home Assistant imports |
 | `custom_components/aligned_cover_group/alignment.py` | Pure math: building a group from its settings, alignment, motion plans. No Home Assistant imports |
 | `custom_components/aligned_cover_group/cover.py` | The group entity: runs plans as service calls and timers, estimates positions while a plan runs |
+| `custom_components/aligned_cover_group/pico.py` | Finding a Pico's On/Stop/Off buttons from its device |
 | `custom_components/aligned_cover_group/config_flow.py` | Create/edit screens (config and options flows) |
 | `custom_components/aligned_cover_group/diagnostics.py` | "Download diagnostics": settings plus the group's live state |
 | `custom_components/aligned_cover_group/translations/en.json` | UI text for those screens |

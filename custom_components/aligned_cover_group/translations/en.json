@@ -6,27 +6,23 @@
         "description": "Group side-by-side shades so their bottom edges stay level.",
         "data": {
           "name": "Name",
-          "covers": "Shades"
+          "shades": "Shades"
         },
         "sections": {
           "pico": {
             "name": "Pico remote (optional)",
-            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron Pico on the Caseta bridge with exactly these shades. Its buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
+            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
             "data": {
-              "pico_open": "Up button",
-              "pico_stop": "Middle button",
-              "pico_close": "Down button"
+              "device_id": "Pico"
             },
             "data_description": {
-              "pico_open": "Named “On” in Home Assistant. Not “Raise”, which is a small arrow button.",
-              "pico_stop": "Named “Stop” in Home Assistant.",
-              "pico_close": "Named “Off” in Home Assistant. Not “Lower”, which is a small arrow button."
+              "device_id": "Its On, Stop and Off buttons are found automatically."
             }
           }
         },
         "data_description": {
           "name": "For example, “Living Room Aligned”.",
-          "covers": "The side-by-side shades to keep level. Each must support setting a position and stopping."
+          "shades": "The side-by-side shades to keep level. Each must support setting a position and stopping."
         }
       },
       "shade": {
@@ -51,14 +47,14 @@
       }
     },
     "error": {
-      "too_few_covers": "Choose at least two shades.",
-      "pico_incomplete": "Choose all three Pico buttons, or none.",
+      "too_few_shades": "Choose at least two shades.",
       "closed_not_below_open": "The closed height must be below the open height.",
       "cover_unsupported": "Every shade must support setting a position and stopping.",
-      "pico_duplicate": "Choose a different button for each Pico role.",
       "ranges_do_not_overlap": "This shade's open-to-closed range doesn't overlap the other shades'. Every shade's range must share some height.",
       "halfway_out_of_range": "That's outside the heights a roller shade can have at 50%; check the measurement and the open and closed heights.",
-      "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements."
+      "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements.",
+      "pico_not_a_shade_pico": "That device doesn't have On, Stop and Off buttons. Choose a shade Pico with a middle button.",
+      "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default)."
     }
   },
   "options": {
@@ -67,26 +63,22 @@
         "title": "Edit {name}",
         "description": "Group side-by-side shades so their bottom edges stay level.",
         "data": {
-          "covers": "Shades"
+          "shades": "Shades"
         },
         "sections": {
           "pico": {
             "name": "Pico remote (optional)",
-            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron Pico on the Caseta bridge with exactly these shades. Its buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
+            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
             "data": {
-              "pico_open": "Up button",
-              "pico_stop": "Middle button",
-              "pico_close": "Down button"
+              "device_id": "Pico"
             },
             "data_description": {
-              "pico_open": "Named “On” in Home Assistant. Not “Raise”, which is a small arrow button.",
-              "pico_stop": "Named “Stop” in Home Assistant.",
-              "pico_close": "Named “Off” in Home Assistant. Not “Lower”, which is a small arrow button."
+              "device_id": "Its On, Stop and Off buttons are found automatically."
             }
           }
         },
         "data_description": {
-          "covers": "The side-by-side shades to keep level. Each must support setting a position and stopping."
+          "shades": "The side-by-side shades to keep level. Each must support setting a position and stopping."
         }
       },
       "shade": {
@@ -111,14 +103,14 @@
       }
     },
     "error": {
-      "too_few_covers": "Choose at least two shades.",
-      "pico_incomplete": "Choose all three Pico buttons, or none.",
+      "too_few_shades": "Choose at least two shades.",
       "closed_not_below_open": "The closed height must be below the open height.",
       "cover_unsupported": "Every shade must support setting a position and stopping.",
-      "pico_duplicate": "Choose a different button for each Pico role.",
       "ranges_do_not_overlap": "This shade's open-to-closed range doesn't overlap the other shades'. Every shade's range must share some height.",
       "halfway_out_of_range": "That's outside the heights a roller shade can have at 50%; check the measurement and the open and closed heights.",
-      "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements."
+      "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements.",
+      "pico_not_a_shade_pico": "That device doesn't have On, Stop and Off buttons. Choose a shade Pico with a middle button.",
+      "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default)."
     }
   }
 }

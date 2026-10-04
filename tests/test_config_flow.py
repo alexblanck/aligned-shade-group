@@ -5,18 +5,13 @@ from typing import Any
 from homeassistant import config_entries
 from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.aligned_cover_group.const import DOMAIN
 
-from .common import (
-    HIGH_SILL,
-    LOW_SILL,
-    PICO_CLOSE,
-    PICO_OPEN,
-    PICO_STOP,
-    set_shade,
-)
+from .common import HIGH_SILL, LOW_SILL, set_shade
 
 
 async def start_flow(hass: HomeAssistant) -> dict[str, Any]:
@@ -32,8 +27,34 @@ async def submit_group(
 ) -> dict[str, Any]:
     return await hass.config_entries.flow.async_configure(
         flow["flow_id"],
-        {"name": "x", "covers": [HIGH_SILL, LOW_SILL], "pico": pico},
+        {"name": "x", "shades": [HIGH_SILL, LOW_SILL], "pico": pico},
     )
+
+
+def add_pico(
+    hass: HomeAssistant, buttons: list[str], disabled: tuple[str, ...] = ()
+) -> str:
+    """Register a Caseta Pico device with these buttons; returns its device id."""
+    entry = MockConfigEntry(domain="lutron_caseta")
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={("lutron_caseta", "pico")},
+        name="Living Room Pico",
+    )
+    for name in buttons:
+        er.async_get(hass).async_get_or_create(
+            "button",
+            "lutron_caseta",
+            f"pico_{name}",
+            config_entry=entry,
+            device_id=device.id,
+            original_name=f"Living Room Pico {name}",
+            disabled_by=(
+                er.RegistryEntryDisabler.INTEGRATION if name in disabled else None
+            ),
+        )
+    return device.id
 
 
 async def test_pico_section_starts_collapsed(hass: HomeAssistant) -> None:
@@ -41,27 +62,34 @@ async def test_pico_section_starts_collapsed(hass: HomeAssistant) -> None:
     assert flow["data_schema"].schema["pico"].options["collapsed"] is True
 
 
-async def test_too_few_covers(hass: HomeAssistant) -> None:
+async def test_too_few_shades(hass: HomeAssistant) -> None:
     flow = await start_flow(hass)
     result = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {"name": "x", "covers": [HIGH_SILL], "pico": {}}
+        flow["flow_id"], {"name": "x", "shades": [HIGH_SILL], "pico": {}}
     )
-    assert result["errors"] == {"base": "too_few_covers"}
+    assert result["errors"] == {"base": "too_few_shades"}
 
 
-async def test_pico_buttons_all_or_none_and_distinct(hass: HomeAssistant) -> None:
+async def test_pico_needs_on_stop_and_off_buttons(hass: HomeAssistant) -> None:
     flow = await start_flow(hass)
-    result = await submit_group(hass, flow, pico_open=PICO_OPEN)
-    assert result["errors"] == {"base": "pico_incomplete"}
+    # A two-button Pico can't stop shades.
+    result = await submit_group(hass, flow, device_id=add_pico(hass, ["On", "Off"]))
+    assert result["errors"] == {"base": "pico_not_a_shade_pico"}
 
-    result = await submit_group(
-        hass, flow, pico_open=PICO_OPEN, pico_stop=PICO_OPEN, pico_close=PICO_CLOSE
-    )
-    assert result["errors"] == {"base": "pico_duplicate"}
 
+async def test_pico_buttons_must_be_enabled(hass: HomeAssistant) -> None:
+    flow = await start_flow(hass)
+    shade_pico = ["On", "Stop", "Off", "Raise", "Lower"]
     result = await submit_group(
-        hass, flow, pico_open=PICO_OPEN, pico_stop=PICO_STOP, pico_close=PICO_CLOSE
+        hass, flow, device_id=add_pico(hass, shade_pico, disabled=("Stop",))
     )
+    assert result["errors"] == {"base": "pico_buttons_disabled"}
+
+
+async def test_shade_pico_is_accepted(hass: HomeAssistant) -> None:
+    flow = await start_flow(hass)
+    shade_pico = ["On", "Stop", "Off", "Raise", "Lower"]
+    result = await submit_group(hass, flow, device_id=add_pico(hass, shade_pico))
     assert result["step_id"] == "shade"
 
 
@@ -145,7 +173,20 @@ async def test_halfway_height_must_fit_a_roller(hass: HomeAssistant) -> None:
         result["flow_id"], {"travel_time_s": 36, "halfway_height": 44}
     )
     assert result["type"] == "create_entry"
-    assert result["options"]["halfway_height"] == 44
+    # Stored with the shade they were measured on: the tallest.
+    assert result["options"] == {
+        "shades": [
+            {"entity_id": HIGH_SILL, "closed_height": 24, "open_height": 84},
+            {
+                "entity_id": LOW_SILL,
+                "closed_height": 12,
+                "open_height": 84,
+                "travel_time_s": 36,
+                "halfway_height": 44,
+            },
+        ],
+        "controls": [],
+    }
 
 
 async def configure_shades(

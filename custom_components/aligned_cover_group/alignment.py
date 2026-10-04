@@ -65,42 +65,50 @@ class Shade:
 
 @dataclass(frozen=True)
 class ShadeConfig:
-    """One shade's settings, as `matched_roll_group` takes them."""
+    """One shade's settings, as stored and as `matched_roll_group` takes them.
+
+    The measured shade also has `travel_time_s`, its full travel time, and
+    optionally `halfway_height`, its hemline at 50% (without it, height is
+    proportional to position).
+    """
 
     entity_id: str
     closed_height: float
     open_height: float
+    travel_time_s: float | None = None
+    halfway_height: float | None = None
 
 
-def matched_roll_group(
-    shades: Iterable[ShadeConfig],
-    tallest_travel_time_s: float,
-    tallest_halfway_height: float | None = None,
-) -> AlignmentGroup:
+def matched_roll_group(shades: Iterable[ShadeConfig]) -> AlignmentGroup:
     """Create an AlignmentGroup for shades whose rolls match.
 
     Matched rolls are the same size whenever their hemlines are at the same
     height: the same fabric and tube, with the same amount of fabric wound on,
     differing only in where each shade's limits are. Every shade, and the
-    group's own position, then sees a view of a shared roll profile.
-
-    The tallest shade (longest range) is the measured one:
-    `tallest_travel_time_s` is its full travel time, and
-    `tallest_halfway_height` its hemline at 50% (without it, height is
-    proportional to position). Raises ValueError if the profile can't reach
-    every shade.
+    group's own position, then sees a view of a shared roll profile: the
+    measured shade's, the one shade with a travel time. Raises ValueError if
+    there isn't exactly one, or if the profile can't reach every shade.
     """
     shades = list(shades)
-    tallest = max(shades, key=lambda shade: shade.open_height - shade.closed_height)
-    if tallest_halfway_height is None:
+    measurements = [
+        (shade, shade.travel_time_s)
+        for shade in shades
+        if shade.travel_time_s is not None
+    ]
+    if len(measurements) != 1:
+        raise ValueError(
+            f"Expected one shade with a travel time, got {len(measurements)}"
+        )
+    [(measured, measured_travel_time_s)] = measurements
+    if measured.halfway_height is None:
         profile = RollProfile.straight(
-            closed_height=tallest.closed_height, open_height=tallest.open_height
+            closed_height=measured.closed_height, open_height=measured.open_height
         )
     else:
         profile = RollProfile(
-            closed_height=tallest.closed_height,
-            open_height=tallest.open_height,
-            halfway_height=tallest_halfway_height,
+            closed_height=measured.closed_height,
+            open_height=measured.open_height,
+            halfway_height=measured.halfway_height,
         )
     lowest_height = min(shade.closed_height for shade in shades)
     highest_height = max(shade.open_height for shade in shades)
@@ -112,14 +120,14 @@ def matched_roll_group(
         )
         # Matched rolls turn at the same rate, and a shade's position is linear
         # in profile position within its view, so profile positions change at
-        # one constant rate for every shade. The tallest shade's view is the
+        # one constant rate for every shade. The measured shade's view is the
         # whole profile (a fraction of 1), so a shade's full travel takes its
-        # view's fraction of the profile times the tallest one's travel time.
+        # view's fraction of the profile times the measured travel time.
         group_shades.append(
             Shade(
                 entity_id=shade.entity_id,
                 view=view,
-                travel_time_s=view.profile_fraction * tallest_travel_time_s,
+                travel_time_s=view.profile_fraction * measured_travel_time_s,
             )
         )
     return AlignmentGroup(

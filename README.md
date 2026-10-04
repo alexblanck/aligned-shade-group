@@ -69,10 +69,10 @@ See [docs/DESIGN.md](docs/DESIGN.md) for details.
 
 1. In the Lutron app, pair a Pico to **exactly** the shades in the group.
 2. In Home Assistant, open the Pico's device (Lutron Caseta integration) and
-   enable its disabled button entities.
-3. When creating the group, choose its buttons in the **Pico remote** section:
-   **On** (up), **Stop** and **Off** (down). Not **Raise** or **Lower**, which
-   are the small arrow buttons.
+   enable its **On**, **Stop** and **Off** button entities, which are
+   disabled by default.
+3. When creating the group, choose the Pico in the **Pico remote** section.
+   The group finds its On (up), Stop and Off (down) buttons itself.
 
 ## Attributes
 

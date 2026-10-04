@@ -20,13 +20,23 @@ from typing import Any
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.cover import CoverEntity, CoverEntityFeature
+from homeassistant.config_entries import ConfigEntry, ConfigFlow
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
+    MockModule,
+    MockPlatform,
     async_fire_time_changed_exact,
+    mock_config_flow,
+    mock_integration,
+    mock_platform,
     setup_test_component_platform,
 )
 
@@ -34,6 +44,10 @@ from custom_components.aligned_cover_group.const import DOMAIN
 
 GROUP = "cover.living_room"
 FAVORITE = 50
+# How the sim Pico's device is identified, and its buttons' names (as Caseta
+# names them: the Pico's name, then the button's).
+PICO_IDENTIFIER = ("lutron_caseta", "living_room_pico")
+PICO_BUTTON_NAMES = {"open": "On", "stop": "Stop", "close": "Off"}
 STEP_S = 0.1  # simulated time per tick
 
 
@@ -218,8 +232,11 @@ class SimPicoButton(ButtonEntity):
         self.role = role
         self._bridge = bridge
         self.entity_id = f"button.pico_{role}"
-        self._attr_name = f"Pico {role}"
+        self._attr_name = f"Living Room Pico {PICO_BUTTON_NAMES[role]}"
         self._attr_unique_id = f"pico_{role}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={PICO_IDENTIFIER}, name="Living Room Pico"
+        )
         self._shades = shades
         self.presses = 0
 
@@ -264,6 +281,13 @@ class Room:
         # Snapshot of every shade's hemline at every tick.
         self.history: list[dict[str, float]] = []
 
+    def pico_device_id(self) -> str:
+        """The device the sim Pico's buttons belong to."""
+        assert self.pico is not None
+        entry = er.async_get(self.hass).async_get(self.pico["open"].entity_id)
+        assert entry is not None and entry.device_id is not None
+        return entry.device_id
+
     def __getitem__(self, entity_id: str) -> SimShade:
         return self.shades[entity_id]
 
@@ -272,11 +296,8 @@ class Room:
         flow = await self.hass.config_entries.flow.async_init(
             DOMAIN, context={"source": "user"}
         )
-        pico = {
-            f"pico_{role}": button.entity_id
-            for role, button in (self.pico or {}).items()
-        }
-        group_input = {"name": "Living Room", "covers": list(self.shades), "pico": pico}
+        pico = {"device_id": self.pico_device_id()} if self.pico else {}
+        group_input = {"name": "Living Room", "shades": list(self.shades), "pico": pico}
         flow = await self.hass.config_entries.flow.async_configure(
             flow["flow_id"], group_input
         )
@@ -391,6 +412,49 @@ class Room:
         return max(self.misalignment(snapshot) for snapshot in self.history)
 
 
+class _PicoEntryFlow(ConfigFlow):
+    """A do-nothing flow for the sim Pico's config entry.
+
+    Home Assistant checks an entry's version against its integration's flow
+    before setting it up, so the entry needs one, though nothing runs it.
+    """
+
+    VERSION = 1
+
+
+async def _async_add_pico(hass: HomeAssistant, buttons: list[SimPicoButton]) -> None:
+    """Add the Pico's buttons as a mock Caseta integration would.
+
+    They're set up from a config entry, as devices need one, so they belong to
+    a Pico device like real Caseta buttons do.
+    """
+
+    async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+        await hass.config_entries.async_forward_entry_setups(entry, [Platform.BUTTON])
+        return True
+
+    async def async_setup_buttons(
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        async_add_entities: AddConfigEntryEntitiesCallback,
+    ) -> None:
+        async_add_entities(buttons)
+
+    mock_integration(
+        hass, MockModule("lutron_caseta", async_setup_entry=async_setup_entry)
+    )
+    mock_platform(hass, "lutron_caseta.config_flow", None)
+    mock_platform(
+        hass,
+        "lutron_caseta.button",
+        MockPlatform(async_setup_entry=async_setup_buttons),
+    )
+    entry = MockConfigEntry(domain="lutron_caseta")
+    entry.add_to_hass(hass)
+    with mock_config_flow("lutron_caseta", _PicoEntryFlow):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+
+
 async def build_room(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
@@ -409,10 +473,7 @@ async def build_room(
             role: SimPicoButton(role, shades, bridge)
             for role in ("open", "stop", "close")
         }
-        setup_test_component_platform(hass, "button", list(buttons.values()))
-        assert await async_setup_component(
-            hass, "button", {"button": {"platform": "test"}}
-        )
+        await _async_add_pico(hass, list(buttons.values()))
     await hass.async_block_till_done()
     room = Room(hass, freezer, shades, buttons, bridge, configured_travel_time_s)
     await room.add_group()

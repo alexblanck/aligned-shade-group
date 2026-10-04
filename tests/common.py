@@ -6,9 +6,6 @@ from homeassistant.core import HomeAssistant
 
 HIGH_SILL = "cover.high_sill"
 LOW_SILL = "cover.low_sill"
-PICO_OPEN = "button.pico_open"
-PICO_STOP = "button.pico_stop"
-PICO_CLOSE = "button.pico_close"
 
 FEATURES = (
     CoverEntityFeature.OPEN

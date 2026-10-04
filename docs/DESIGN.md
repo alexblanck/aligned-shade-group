@@ -40,23 +40,56 @@ design relies on:
 
 ## Configuration (UI only)
 
-Created via a config flow, edited via an options flow. No YAML.
+Created via a config flow, edited via an options flow. No YAML. The name is
+the config entry's title; everything else is stored in its options:
 
-Group:
+```json
+{
+  "shades": [
+    {"entity_id": "cover.left_1", "closed_height": 49.75, "open_height": 125.125},
+    {"entity_id": "cover.left_2", "closed_height": 17.875, "open_height": 125.125,
+     "travel_time_s": 24.0, "halfway_height": 67.125}
+  ],
+  "controls": [
+    {"type": "pico", "shades": ["cover.left_1", "cover.left_2"],
+     "open": "button.pico_on", "stop": "button.pico_stop", "close": "button.pico_off"}
+  ]
+}
+```
 
 | Field | Notes |
 |---|---|
-| name | |
-| covers | 2+ cover entities that support `set_position` and `stop` |
-| pico open / stop / close buttons | optional Lutron Caseta `button` entities (all three, distinct, or none) |
-| travel_time_s | seconds for the tallest shade's full close→open travel |
-
-Per shade:
-
-| Field | Notes |
-|---|---|
+| shades | 2+ cover entities that support `set_position` and `stop`, in the order chosen |
 | closed_height | hemline height when fully closed |
 | open_height | hemline height when fully open (> closed_height) |
+| travel_time_s | the measured shade's full close→open travel, in seconds |
+| halfway_height | optional: the measured shade's hemline height at 50% (see "Roll profiles") |
+| controls | ways to start several shades at once through the bridge (see below); may be empty |
+
+Measurements are stored with the shade they were taken on (the measured
+shade), not for the group: exactly one shade has `travel_time_s`. Setup
+measures the tallest shade (longest range), which is the most accurate to
+time; editing the group asks again, suggesting the previous answers only if
+the same shade is still the tallest. Storing them with a shade also leaves
+room for mismatched rolls, where each shade would have its own.
+
+Each control has a `type` and the `shades` it moves, which may be only some of
+the group's (a Pico paired to two of three windows, say). Today the only type
+is `pico`. The setup form asks for the Pico device and stores the entity ids
+of its On, Stop and Off buttons (`open`, `stop`, `close`), found by
+`pico.py`: the Caseta integration names each button entity after the Pico,
+ending in the button's name (not Raise or Lower, which nudge shades). The
+form rejects a Pico without all three, or with any of them disabled (Caseta
+disables them by default). Storing the buttons keeps the settings readable
+and means only the form depends on Caseta's naming; like the shades, they're
+stored by entity id, so renaming one means editing the group. Editing
+suggests the device the stored buttons are on.
+
+The setup form only offers one Pico, paired to every shade, and the planner
+uses only such a Pico. The list leaves room for Picos paired to subsets of the
+shades, and for Lutron scenes (`"type": "scene"` with each shade's scene
+position): pressing or activating one starts its shades together, and
+follow-up `set_position` commands retarget any that should stop elsewhere.
 
 Heights use any unit, as long as every shade uses the same reference (e.g.
 inches from the floor). Tops do not need to match, but every shade's range must
@@ -65,8 +98,8 @@ height, "level" has no meaning.
 
 Every shade is assumed to move at one shared speed (height units per second),
 the same up and down: hemlines can only stay level while moving if they move
-at the same speed. The speed comes from the tallest shade (the most accurate to
-time), and each shade's travel time is derived from its own range. Shades with
+at the same speed. The speed comes from the measured shade, and each shade's
+travel time is derived from its own range. Shades with
 different speeds still end level, since each stops at its own target, but
 drift apart mid-move.
 
@@ -106,8 +139,8 @@ every shade shares one roll profile, differing only in the heights its view
 runs between.
 `matched_roll_group` builds the group from the settings:
 
-- The tallest shade (longest height range) is the measured one; its
-  `RollProfile` is the only profile, validated once.
+- The measured shade (the one with a travel time; the tallest, at setup)
+  defines the only `RollProfile`, validated once.
 - Every shade sees a `RollProfileView` of it (`profile.view(closed, open)`):
   the profile rescaled to its own limits, as its own 0-100%. Within a view,
   positions rescale in a straight line (the motor turns at a steady speed). A shade reaching above or

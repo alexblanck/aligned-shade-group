@@ -26,7 +26,7 @@ from homeassistant.components.cover import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
-    CONF_ENTITY_ID,
+    CONF_TYPE,
     SERVICE_SET_COVER_POSITION,
     SERVICE_STOP_COVER,
 )
@@ -55,16 +55,15 @@ from .alignment import (
     matched_roll_group,
 )
 from .const import (
-    CONF_CLOSED_HEIGHT,
-    CONF_COVERS,
-    CONF_HALFWAY_HEIGHT,
-    CONF_OPEN_HEIGHT,
+    CONF_CONTROLS,
     CONF_PICO_CLOSE,
     CONF_PICO_OPEN,
     CONF_PICO_STOP,
-    CONF_TRAVEL_TIME_S,
+    CONF_SHADES,
+    CONTROL_PICO,
     DOMAIN,
 )
+from .pico import PicoButtons
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,19 +95,6 @@ class _RunningMove:
         return round(max(move.target_pct, move.from_pct - moved_pct))
 
 
-@dataclass(frozen=True)
-class PicoButtons:
-    """Button entities of a Pico paired to exactly the group's shades."""
-
-    open: str
-    stop: str
-    close: str
-
-    def toward(self, direction: Direction) -> str:
-        """The button that sends every shade toward that direction's end."""
-        return self.open if direction is Direction.OPENING else self.close
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -116,25 +102,22 @@ async def async_setup_entry(
 ) -> None:
     """Set up the aligned cover group entity."""
     options = entry.options
-    group = matched_roll_group(
+    group = matched_roll_group(ShadeConfig(**shade) for shade in options[CONF_SHADES])
+    # Only a Pico paired to every shade is used so far.
+    entity_ids = {shade.entity_id for shade in group.shades}
+    pico = next(
         (
-            ShadeConfig(
-                entity_id=shade[CONF_ENTITY_ID],
-                closed_height=shade[CONF_CLOSED_HEIGHT],
-                open_height=shade[CONF_OPEN_HEIGHT],
+            PicoButtons(
+                open=control[CONF_PICO_OPEN],
+                stop=control[CONF_PICO_STOP],
+                close=control[CONF_PICO_CLOSE],
             )
-            for shade in options[CONF_COVERS]
+            for control in options[CONF_CONTROLS]
+            if control[CONF_TYPE] == CONTROL_PICO
+            and set(control[CONF_SHADES]) == entity_ids
         ),
-        tallest_travel_time_s=options[CONF_TRAVEL_TIME_S],
-        tallest_halfway_height=options.get(CONF_HALFWAY_HEIGHT),
+        None,
     )
-    pico = None
-    if options.get(CONF_PICO_OPEN):
-        pico = PicoButtons(
-            open=options[CONF_PICO_OPEN],
-            stop=options[CONF_PICO_STOP],
-            close=options[CONF_PICO_CLOSE],
-        )
     entity = AlignedCoverGroup(entry=entry, group=group, pico=pico)
     entry.runtime_data = entity  # for diagnostics
     async_add_entities([entity])
