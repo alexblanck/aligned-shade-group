@@ -28,7 +28,8 @@ Possible approaches:
 - When the group itself stopped the shades, trust its own estimate (from the
   plan's timing) over the reported percent for planning the next move.
 - After a stop, re-drive each shade to the reported percent so the shade's
-  physical position matches what it reports (costs a small extra movement).
+  physical position matches what it reports (see "Sync positions after a
+  stop" below).
 - If the error is consistent per direction, correct for it.
 
 ## Enhancements
@@ -85,6 +86,41 @@ use the Picos (or scenes) that cover its shades.
 
 The cost is a different setup flow and the coordination logic, so it's
 worth it only if overlapping independent groups prove annoying in practice.
+
+### Sync positions after a stop
+
+An option to send each shade a follow-up `set_position` to the percent it
+reported once it has stopped, so its physical position matches its report
+(addresses the inaccurate reports above).
+
+- Wait until the shades have actually stopped and reported, rather than
+  sending it with the stop.
+- Costs a small extra movement after every stop, hence optional.
+- Should apply however the stop happened: the group's stop button, a Pico
+  press or another command; or only to stops the group made, which are the
+  ones it can tell happened.
+- After the sync the shades are where they say, but not necessarily level
+  with each other: whole-percent positions can still leave them slightly
+  apart.
+
+### Skip measurements for identical shades
+
+Shades with the same limits (same size, hung at the same height) and matched
+rolls are level whenever they're at the same percentage, so heights and the
+50% measurement add nothing: the group's percentage can go straight to every
+shade. A setup option ("my shades are identical") could skip the per-shade
+height steps and the roll curve.
+
+- The group would still be useful for its Pico or scene handling: starting
+  and stopping the shades together, the steady slider while moving, and
+  missing-device repairs.
+- It still needs the travel time: the group only knows the shades are moving
+  from its own plan, and pressing the Pico's Stop when nothing is moving
+  sends the shades to their favorite position. Without a travel time it
+  would have to stop each shade on its own instead.
+- Staggering still applies if they start at different percentages, and it
+  works from percentages alone: for identical shades, hemline order and
+  percentage order are the same.
 
 ### Follow entity renames automatically
 
