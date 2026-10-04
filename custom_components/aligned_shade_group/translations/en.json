@@ -57,7 +57,7 @@
       },
       "travel": {
         "title": "Travel time",
-        "description": "How long does {name}, the tallest shade, take to go from fully closed to fully open? All shades are assumed to move at the same speed.",
+        "description": "How long does {name}, the tallest shade, take to go from fully closed to fully open?\n\nAll shades are assumed to move at the same speed.",
         "data": {
           "travel_time_s": "Full travel time"
         },
@@ -66,13 +66,13 @@
         },
         "sections": {
           "roller_curve": {
-            "name": "Roller curve correction (optional)",
-            "description": "A roller shade's roll is fattest when open, so its hemline drops faster near the top. If your shades' hemlines don't line up partway, set {name} to 50% on its own and enter its hemline height.\n\nThis assumes the shades' rolls match: same fabric and tube, with the same amount of fabric wound on whenever their hemlines are level.",
+            "name": "Roller curve correction",
+            "description": "Most roller shade positions count motor turns, not distance. The roll is fattest when open, so the hemline drops faster near the top, and 50% sits above the halfway point. Set {name} to 50% and enter its hemline height.\n\nThe shades' rolls are assumed to match: same fabric and tube, and equally full when the hemlines are level.",
             "data": {
               "halfway_height": "Hemline height at 50%"
             },
             "data_description": {
-              "halfway_height": "Between {low} and {high}. Leave empty if the shades line up partway already."
+              "halfway_height": "Between {low} and {high}. Leave empty only if 50% puts {name}'s hemline exactly halfway between closed and open."
             }
           }
         }

@@ -62,26 +62,23 @@ SHADE_SCHEMA = vol.Schema(
     }
 )
 
-
-def _travel_schema(curve_collapsed: bool) -> vol.Schema:
-    """Schema for the travel time and, in a section, the optional 50% height."""
-    return vol.Schema(
-        {
-            vol.Required(CONF_TRAVEL_TIME_S): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1,
-                    max=300,
-                    step=0.1,
-                    unit_of_measurement="s",
-                    mode=selector.NumberSelectorMode.BOX,
-                )
-            ),
-            vol.Required(FIELD_ROLLER_CURVE): section(
-                vol.Schema({vol.Optional(CONF_HALFWAY_HEIGHT): HEIGHT_SELECTOR}),
-                {"collapsed": curve_collapsed},
-            ),
-        }
-    )
+TRAVEL_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_TRAVEL_TIME_S): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=300,
+                step=0.1,
+                unit_of_measurement="s",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(FIELD_ROLLER_CURVE): section(
+            vol.Schema({vol.Optional(CONF_HALFWAY_HEIGHT): HEIGHT_SELECTOR}),
+            {"collapsed": False},
+        ),
+    }
+)
 
 
 # Covers offered as shades: ones that raise and lower to a position, so not
@@ -344,14 +341,10 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             prefill[CONF_TRAVEL_TIME_S] = old[CONF_TRAVEL_TIME_S]
         if CONF_HALFWAY_HEIGHT in old:
             prefill[FIELD_ROLLER_CURVE][CONF_HALFWAY_HEIGHT] = old[CONF_HALFWAY_HEIGHT]
-        shown = user_input or prefill
         return self.async_show_form(
             step_id="travel",
             data_schema=self.add_suggested_values_to_schema(
-                _travel_schema(
-                    curve_collapsed=CONF_HALFWAY_HEIGHT not in shown[FIELD_ROLLER_CURVE]
-                ),
-                shown,
+                TRAVEL_SCHEMA, user_input or prefill
             ),
             errors=errors,
             description_placeholders={

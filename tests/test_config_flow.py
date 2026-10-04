@@ -352,10 +352,6 @@ async def test_reconfigure_changes_only_what_was_edited(
     configure = hass.config_entries.flow.async_configure
     flow = await configure(flow["flow_id"], {**prefilled_answers(flow), "name": "Den"})
     while flow["type"] == "form":
-        if flow["step_id"] == "travel":
-            # The saved 50% height opens the roller curve section.
-            curve = flow["data_schema"].schema["roller_curve"]
-            assert curve.options["collapsed"] is False
         flow = await configure(flow["flow_id"], prefilled_answers(flow))
     await hass.async_block_till_done()
 
