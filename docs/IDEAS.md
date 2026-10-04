@@ -61,34 +61,30 @@ and one per pair of windows), the planner could press whichever cover each
 level group, falling back to commands for the rest; stop would press each Pico
 whose shades are moving. Shares most of its logic with scenes.
 
-### Overlapping groups
+### A hub for overlapping groups
 
-Example: five shades across one wall, two on the left (with their own Pico)
-and three on the right (with theirs). The wish: control the left pair, the
-right three, and all five, each kept level.
+Overlapping groups work today as independent groups. Example: five shades
+across one wall, set up as "left" (two shades, with their Pico), "right"
+(three, with theirs) and "all" (five, with a five-shade Pico).
 
-Options:
+What's awkward about that:
 
-1. **Three independent groups** (left, right, all), which works today. Each
-   plans on its own; a command to one looks like an outside command to the
-   others, which simply stop following their plans. Downsides: the
-   measurements are entered three times, and the five-shade group can't use
-   either Pico (neither covers all five) until Picos paired to some of the
-   shades are supported (above). Then it could press both Picos when each
-   pair starts level.
-2. **Groups of groups:** an "all" group whose members are the left and right
-   groups. Not supported: the picker hides aligned groups as members, since
-   commanding a group as if it were one shade bypasses its own staggered
-   starts. Making it work means the outer group delegating to the inner
-   ones' planners, which gets complicated.
-3. **One group with subgroups:** one config entry for all five shades, with
-   optional subgroups (say, as config subentries) that each get their own
-   cover entity. One planner and one set of position estimates serve them
-   all, so they can't conflict, measurements are entered once, and each
-   Pico is a control on the shades it's paired to. Probably the cleanest
-   long term, and it builds on the controls list and level groups.
+- The measurements are entered once per group.
+- Each group has its own idea of where the shades are. If "all" is running
+  and "left" takes over its two shades, "all" sees positions it didn't send,
+  treats it as an outside command and stops following its plan, so it loses
+  track of the right three too until its next command.
 
-Worth trying option 1 in practice first, to see what actually goes wrong.
+A hub would be one integration entry for the wall: the shades, the
+measurements (entered once) and the Picos, with groups defined inside it
+(say, as config subentries via an "Add group" button), each its own cover
+entity and device. All the groups would share one planner and one view of
+each shade's position and motion, so a group taking over some shades hands
+them over cleanly and the others keep tracking the rest. Each group would
+use the Picos (or scenes) that cover its shades.
+
+The cost is a different setup flow and the coordination logic, so it's
+worth it only if overlapping independent groups prove annoying in practice.
 
 ### Follow entity renames automatically
 
