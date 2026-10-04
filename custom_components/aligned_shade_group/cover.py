@@ -393,7 +393,8 @@ class AlignedShadeGroup(CoverEntity):
             translation_key="entities_missing",
             translation_placeholders={
                 "name": self._entry.title,
-                "entities": ", ".join(missing),
+                # A Markdown list, one entity per line.
+                "entities": "\n".join(f"- {entity_id}" for entity_id in missing),
             },
         )
         return missing

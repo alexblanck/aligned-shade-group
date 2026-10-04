@@ -257,7 +257,7 @@ async def test_renamed_pico_button_falls_back_to_each_shade(
     assert "not using its Pico" in caplog.text
     issue = missing_entities_issue(hass, room)
     assert issue is not None
-    assert issue.translation_placeholders["entities"] == "button.pico_stop"
+    assert issue.translation_placeholders["entities"] == "- button.pico_stop"
 
 
 async def test_renamed_shade_is_left_out_and_raised(
@@ -274,7 +274,7 @@ async def test_renamed_shade_is_left_out_and_raised(
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 100}
     issue = missing_entities_issue(hass, room)
     assert issue is not None
-    assert issue.translation_placeholders["entities"] == HIGH_SILL
+    assert issue.translation_placeholders["entities"] == f"- {HIGH_SILL}"
 
 
 async def test_renames_raise_and_clear_the_issue_without_a_move(
@@ -287,7 +287,7 @@ async def test_renames_raise_and_clear_the_issue_without_a_move(
     await room.run(2)
     issue = missing_entities_issue(hass, room)
     assert issue is not None
-    assert issue.translation_placeholders["entities"] == LOW_SILL
+    assert issue.translation_placeholders["entities"] == f"- {LOW_SILL}"
 
     # Renamed back to the id the group knows: fixed without reconfiguring.
     registry.async_update_entity("cover.renamed", new_entity_id=LOW_SILL)
