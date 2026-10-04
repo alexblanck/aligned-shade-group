@@ -1,17 +1,35 @@
-"""Config flow validation errors (the happy paths run in test_room.py)."""
+"""Setting up and editing a group through its forms.
 
+Validation errors use bare fake shades; whole flows run in a simulated room
+(sim.py), so the group they create or edit is real. How the group then moves
+is tested in test_room.py.
+"""
+
+import copy
 from typing import Any
 
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant import config_entries
 from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    get_schema_suggested_value,
+)
 
 from custom_components.aligned_shade_group.const import DOMAIN
 
 from .common import HIGH_SILL, LOW_SILL, set_shade
+from .sim import (
+    GROUP,
+    HEIGHT_TOLERANCE,
+    build_room,
+    matched_rolls,
+    prefilled_answers,
+    same_tops,
+)
 
 
 async def start_flow(hass: HomeAssistant) -> dict[str, Any]:
@@ -99,6 +117,17 @@ async def test_covers_must_set_position_and_stop(hass: HomeAssistant) -> None:
         HIGH_SILL, "open", {"supported_features": CoverEntityFeature.SET_POSITION}
     )
     result = await submit_group(hass, flow)
+    assert result["errors"] == {"base": "cover_unsupported"}
+
+
+async def test_shades_must_be_covers(hass: HomeAssistant) -> None:
+    # The picker only offers covers, but submitted values aren't filtered.
+    flow = await start_flow(hass)
+    hass.states.async_set("light.lamp", "on", {"supported_features": 255})
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {"name": "x", "shades": [HIGH_SILL, "light.lamp"], "pico": {}},
+    )
     assert result["errors"] == {"base": "cover_unsupported"}
 
 
@@ -224,3 +253,108 @@ async def test_halfway_height_whose_curve_cannot_reach_every_shade(
         result["flow_id"], {"travel_time_s": 30, "halfway_height": 60}
     )
     assert result["errors"] == {"base": "halfway_cant_reach"}
+
+
+async def test_reconfigure_applies_to_running_group(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, same_tops(100))
+
+    # Rename the group and remove its Pico; the group reloads with both.
+    flow = await room.start_reconfigure()
+    assert flow["step_id"] == "reconfigure"
+    assert flow["description_placeholders"]["name"] == "Living Room"
+    # The Pico section opens expanded, since this group has one.
+    pico_section = flow["data_schema"].schema["pico"]
+    assert pico_section.options["collapsed"] is False
+    # ...and suggests the Pico its stored buttons belong to.
+    assert (
+        get_schema_suggested_value(pico_section.schema.schema, "device_id")
+        == room.pico_device_id()
+    )
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {"name": "Den", "shades": [HIGH_SILL, LOW_SILL], "pico": {}},
+    )
+    flow = await room.answer_shade_steps(flow)
+    assert flow["type"] == "abort", flow
+    assert flow["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    assert room.entry.title == "Den"
+    assert room.entry.data["controls"] == []
+    assert room.group.attributes["friendly_name"] == "Den"
+
+    await room.command("close_cover")
+    await room.run_until_still()
+    assert room.pico["close"].presses == 0
+    assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
+async def test_shade_picker_offers_only_shades(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    await build_room(hass, freezer, same_tops(0))
+
+    # Starting a second group: its picker leaves out the first group, and
+    # covers that aren't shades (such as garage doors).
+    flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    config = flow["data_schema"].schema["shades"].config
+    assert config["exclude_entities"] == [GROUP]
+    (shade_filter,) = config["filter"]
+    assert shade_filter["device_class"] == ["shade", "blind", "shutter"]
+
+
+async def test_reconfigure_mid_run(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, same_tops(0))
+
+    await room.command("open_cover")
+    await room.run(3)  # high-sill shade's start still pending
+    flow = await room.start_reconfigure()
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {"name": "Living Room", "shades": [HIGH_SILL, LOW_SILL], "pico": {}},
+    )
+    flow = await room.answer_shade_steps(flow)
+    await hass.async_block_till_done()
+    await room.run(20)
+
+    # The reloaded group forgot the old plan, including its pending start.
+    assert room[HIGH_SILL].starts == []
+    assert room.group.state != "opening"
+
+
+async def test_group_has_its_own_device(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, same_tops(0))
+
+    entity = er.async_get(hass).async_get("cover.living_room")
+    device = dr.async_get(hass).async_get(entity.device_id)
+    assert device.name == "Living Room"
+    assert device.entry_type is None
+    assert device.config_entries == {room.entry.entry_id}
+
+
+async def test_reconfigure_changes_only_what_was_edited(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # Three shades with a curve and a Pico, then Reconfigure changing only the
+    # name and accepting every other prefilled answer as it is.
+    room = await build_room(hass, freezer, matched_rolls(50), pico=True)
+    # Deep-copied in case a change ever edits the stored data in place.
+    saved = copy.deepcopy(dict(room.entry.data))
+
+    flow = await room.start_reconfigure()
+    configure = hass.config_entries.flow.async_configure
+    flow = await configure(flow["flow_id"], {**prefilled_answers(flow), "name": "Den"})
+    while flow["type"] == "form":
+        flow = await configure(flow["flow_id"], prefilled_answers(flow))
+    await hass.async_block_till_done()
+
+    assert flow["reason"] == "reconfigure_successful", flow
+    assert room.entry.title == "Den"
+    assert room.entry.data == saved
+    assert room.entry.data["controls"], "the Pico was kept"

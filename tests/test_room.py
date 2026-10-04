@@ -16,19 +16,17 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
 )
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
-from custom_components.aligned_shade_group.const import DOMAIN
-
-from .common import HIGH_SILL, LOW_SILL, SHADES, SPEED
-from .sim import FAVORITE, GROUP, STEP_S, ShadeSpec, build_room
-
-# Hemline spread allowed while moving, in inches: timers fire on the next
-# 0.1 s tick (up to about 0.5 in for a roller near the top of its travel), plus
-# whole-percent position rounding.
-HEIGHT_TOLERANCE = 1.0
-
-
-def same_tops(position_pct: int = 0) -> list[ShadeSpec]:
-    return [ShadeSpec.from_config(config, SPEED, position_pct) for config in SHADES]
+from .common import HIGH_SILL, LOW_SILL
+from .sim import (
+    FAVORITE,
+    GROUP,
+    HEIGHT_TOLERANCE,
+    STEP_S,
+    ShadeSpec,
+    build_room,
+    matched_rolls,
+    same_tops,
+)
 
 
 @pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
@@ -215,54 +213,6 @@ async def test_different_tops_and_sills(
     await room.run_until_still()
     assert room.positions_pct_by_id() == {"cover.left": 0, "cover.right": 0}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
-
-
-async def test_reconfigure_applies_to_running_group(
-    hass: HomeAssistant, freezer: FrozenDateTimeFactory
-) -> None:
-    room = await build_room(hass, freezer, same_tops(100))
-
-    # Rename the group and remove its Pico; the group reloads with both.
-    flow = await room.start_reconfigure()
-    assert flow["step_id"] == "reconfigure"
-    assert flow["description_placeholders"]["name"] == "Living Room"
-    # The Pico section opens expanded, since this group has one.
-    pico_section = flow["data_schema"].schema["pico"]
-    assert pico_section.options["collapsed"] is False
-    # ...and suggests the Pico its stored buttons belong to.
-    (device_field,) = pico_section.schema.schema
-    assert device_field.description == {"suggested_value": room.pico_device_id()}
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {"name": "Den", "shades": [HIGH_SILL, LOW_SILL], "pico": {}},
-    )
-    flow = await room.answer_shade_steps(flow)
-    assert flow["type"] == "abort", flow
-    assert flow["reason"] == "reconfigure_successful"
-    await hass.async_block_till_done()
-    assert room.entry.title == "Den"
-    assert room.entry.data["controls"] == []
-    assert room.group.attributes["friendly_name"] == "Den"
-
-    await room.command("close_cover")
-    await room.run_until_still()
-    assert room.pico["close"].presses == 0
-    assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
-    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
-
-
-async def test_shade_picker_offers_only_shades(
-    hass: HomeAssistant, freezer: FrozenDateTimeFactory
-) -> None:
-    await build_room(hass, freezer, same_tops(0))
-
-    # Starting a second group: its picker leaves out the first group, and
-    # covers that aren't shades (such as garage doors).
-    flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    config = flow["data_schema"].schema["shades"].config
-    assert config["exclude_entities"] == [GROUP]
-    (shade_filter,) = config["filter"]
-    assert shade_filter["device_class"] == ["shade", "blind", "shutter"]
 
 
 async def test_pico_paired_to_some_shades_is_not_used_yet(
@@ -508,39 +458,6 @@ async def test_failed_command(
     await room.run(10)
     assert room.pico["stop"].presses == 0
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
-
-
-async def test_reconfigure_mid_run(
-    hass: HomeAssistant, freezer: FrozenDateTimeFactory
-) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
-
-    await room.command("open_cover")
-    await room.run(3)  # high-sill shade's start still pending
-    flow = await room.start_reconfigure()
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {"name": "Living Room", "shades": [HIGH_SILL, LOW_SILL], "pico": {}},
-    )
-    flow = await room.answer_shade_steps(flow)
-    await hass.async_block_till_done()
-    await room.run(20)
-
-    # The reloaded group forgot the old plan, including its pending start.
-    assert room[HIGH_SILL].starts == []
-    assert room.group.state != "opening"
-
-
-async def test_group_has_its_own_device(
-    hass: HomeAssistant, freezer: FrozenDateTimeFactory
-) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
-
-    entity = er.async_get(hass).async_get("cover.living_room")
-    device = dr.async_get(hass).async_get(entity.device_id)
-    assert device.name == "Living Room"
-    assert device.entry_type is None
-    assert device.config_entries == {room.entry.entry_id}
 
 
 async def test_motion_ends_at_the_planned_end(
@@ -799,51 +716,6 @@ async def test_identical_rollers_follow_the_group_position(
 
     assert room.positions_pct_by_id() == {"cover.a": target_pct, "cover.b": target_pct}
     assert room.group.attributes["current_position"] == target_pct
-
-
-def matched_rolls(position_pct: float) -> list[ShadeSpec]:
-    """Three shades whose rolls match at every hemline height.
-
-    "high" has the longest range, so it's the one measured; "tall" reaches
-    below it and "low" further still, so the curve must be extended. "tall"
-    covers more of the group's positions than "high" (it's lower on the roll,
-    where the hemline moves slower), so the travel time must be tied to the
-    measured shade rather than the widest window.
-    """
-    # A stronger curve than the living room's, so extension errors show.
-    curvature = 0.0025
-    specs = [
-        ShadeSpec(
-            name="tall",
-            closed_height=30,
-            open_height=100,
-            travel_time_s=30,
-            position_pct=position_pct,
-            roll_curvature=curvature,
-            roll_top_height=100,
-        ),
-        ShadeSpec(
-            name="high",
-            closed_height=50,
-            open_height=125,
-            travel_time_s=0,
-            position_pct=position_pct,
-            roll_curvature=curvature,
-            roll_top_height=100,
-        ),
-        ShadeSpec(
-            name="low",
-            closed_height=12,
-            open_height=60,
-            travel_time_s=0,
-            position_pct=position_pct,
-            roll_curvature=curvature,
-            roll_top_height=100,
-        ),
-    ]
-    for spec in specs[1:]:
-        spec.travel_time_s = 30 * spec.full_turns / specs[0].full_turns
-    return specs
 
 
 @pytest.mark.parametrize("target_pct", [25, 50, 75])

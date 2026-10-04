@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
@@ -18,7 +19,7 @@ from homeassistant.const import (
     CONF_TYPE,
     STATE_UNAVAILABLE,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, split_entity_id
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
@@ -48,14 +49,14 @@ FIELD_SHADES = "shades"
 FIELD_PICO = "pico"  # a section, holding:
 FIELD_PICO_DEVICE = "device_id"
 
-_HEIGHT = selector.NumberSelector(
+HEIGHT_SELECTOR = selector.NumberSelector(
     selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX, step="any")
 )
 
 SHADE_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_CLOSED_HEIGHT): _HEIGHT,
-        vol.Required(CONF_OPEN_HEIGHT): _HEIGHT,
+        vol.Required(CONF_CLOSED_HEIGHT): HEIGHT_SELECTOR,
+        vol.Required(CONF_OPEN_HEIGHT): HEIGHT_SELECTOR,
     }
 )
 
@@ -70,7 +71,7 @@ TRAVEL_SCHEMA = vol.Schema(
                 mode=selector.NumberSelectorMode.BOX,
             )
         ),
-        vol.Optional(CONF_HALFWAY_HEIGHT): _HEIGHT,
+        vol.Optional(CONF_HALFWAY_HEIGHT): HEIGHT_SELECTOR,
     }
 )
 
@@ -90,33 +91,42 @@ def _choose_shades_schema(hass: HomeAssistant, pico_collapsed: bool) -> vol.Sche
 
     Aligned shade groups, this one included, aren't offered as shades.
     """
-    groups = [
+    aligned_shade_groups = [
         entry.entity_id
         for entry in er.async_get(hass).entities.values()
         if entry.platform == DOMAIN
     ]
-    pico = selector.DeviceSelector(
-        selector.DeviceSelectorConfig(
-            integration="lutron_caseta",
-            entity=[selector.EntityFilterSelectorConfig(domain="button")],
-        )
-    )
     return vol.Schema(
         {
             vol.Required(FIELD_NAME): selector.TextSelector(),
             vol.Required(FIELD_SHADES): selector.EntitySelector(
                 selector.EntitySelectorConfig(
-                    filter=SHADE_FILTER, multiple=True, exclude_entities=groups
+                    filter=SHADE_FILTER,
+                    multiple=True,
+                    exclude_entities=aligned_shade_groups,
                 )
             ),
             vol.Required(FIELD_PICO): section(
-                vol.Schema({vol.Optional(FIELD_PICO_DEVICE): pico}),
+                vol.Schema(
+                    {
+                        vol.Optional(FIELD_PICO_DEVICE): selector.DeviceSelector(
+                            selector.DeviceSelectorConfig(
+                                integration="lutron_caseta",
+                                entity=[
+                                    selector.EntityFilterSelectorConfig(domain="button")
+                                ],
+                            )
+                        )
+                    }
+                ),
                 {"collapsed": pico_collapsed},
             ),
         }
     )
 
 
+# Checked here too: the picker's filter only hides covers in the form, and it
+# matches any of its features, so it can't require both.
 REQUIRED_FEATURES = CoverEntityFeature.SET_POSITION | CoverEntityFeature.STOP
 
 
@@ -134,6 +144,8 @@ def _validate_shades(hass: HomeAssistant, entity_ids: list[str]) -> str | None:
     if len(entity_ids) < 2:
         return "too_few_shades"
     for entity_id in entity_ids:
+        if split_entity_id(entity_id)[0] != COVER_DOMAIN:
+            return "cover_unsupported"
         features = _supported_features(hass, entity_id)
         if features is not None and features & REQUIRED_FEATURES != REQUIRED_FEATURES:
             return "cover_unsupported"
@@ -166,6 +178,9 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
     heights, then a "travel" step that measures the tallest shade: its travel
     time (all shades are assumed to move at the same speed) and, optionally,
     its 50% height. Those are stored with that shade.
+
+    Each form opens with its prefill (saved settings, when editing), or, when
+    shown again after an error, with what was just entered: `user_input or`.
     """
 
     VERSION = 3
@@ -175,39 +190,37 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         self._name = ""
         self._entity_ids: list[str] = []
         self._pico: PicoButtons | None = None
-        # Each shade's settings so far, in the order the shades were chosen.
-        self._shades: list[dict[str, Any]] = []
-        # When editing, the stored settings by entity id, to suggest as answers.
-        self._previous: dict[str, dict[str, Any]] = {}
+        # Each shade's settings by entity id: those entered so far, in the order
+        # the shades were chosen, and, when editing, those saved before.
+        self._new_shades: dict[str, dict[str, Any]] = {}
+        self._old_shades: dict[str, dict[str, Any]] = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Create a group: choose its name, shades and optional Pico."""
-        return await self._async_step_choose_shades("user", user_input, suggested={})
+        return await self._async_step_choose_shades("user", user_input, prefill={})
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Edit a group, starting from its current settings."""
         entry = self._get_reconfigure_entry()
-        self._previous = {
+        self._old_shades = {
             shade[CONF_ENTITY_ID]: shade for shade in entry.data[CONF_SHADES]
         }
-        suggested = {
+        prefill = {
             FIELD_NAME: entry.title,
-            FIELD_SHADES: list(self._previous),
-            FIELD_PICO: self._pico_suggestion(entry.data[CONF_CONTROLS]),
+            FIELD_SHADES: list(self._old_shades),
+            FIELD_PICO: self._pico_prefill(entry.data[CONF_CONTROLS]),
         }
-        return await self._async_step_choose_shades(
-            "reconfigure", user_input, suggested
-        )
+        return await self._async_step_choose_shades("reconfigure", user_input, prefill)
 
     async def _async_step_choose_shades(
         self,
         step_id: str,
         user_input: dict[str, Any] | None,
-        suggested: dict[str, Any],
+        prefill: dict[str, Any],
     ) -> ConfigFlowResult:
         """Choose the name, shades and Pico, then go on to the first shade."""
         errors: dict[str, str] = {}
@@ -217,15 +230,15 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 return await self.async_step_shade()
 
-        has_pico = bool(suggested.get(FIELD_PICO))
+        has_pico = bool(prefill.get(FIELD_PICO))
         return self.async_show_form(
             step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(
                 _choose_shades_schema(self.hass, pico_collapsed=not has_pico),
-                user_input or suggested,
+                user_input or prefill,
             ),
             errors=errors,
-            description_placeholders={"name": suggested.get(FIELD_NAME, "")},
+            description_placeholders={"name": prefill.get(FIELD_NAME, "")},
         )
 
     def _choose_shades(self, user_input: dict[str, Any]) -> str | None:
@@ -241,10 +254,10 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         self._name = user_input[FIELD_NAME]
         self._entity_ids = user_input[FIELD_SHADES]
         self._pico = pico
-        self._shades = []
+        self._new_shades = {}
         return None
 
-    def _pico_suggestion(self, controls: list[dict[str, Any]]) -> dict[str, str]:
+    def _pico_prefill(self, controls: list[dict[str, Any]]) -> dict[str, str]:
         """The Pico section's answer for stored controls: the Pico's device."""
         for control in controls:
             if control[CONF_TYPE] != ControlType.PICO:
@@ -258,29 +271,29 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Collect heights for the next shade."""
-        entity_id = self._entity_ids[len(self._shades)]
+        entity_id = self._entity_ids[len(self._new_shades)]
         errors: dict[str, str] = {}
 
         if user_input is not None:
             if user_input[CONF_CLOSED_HEIGHT] >= user_input[CONF_OPEN_HEIGHT]:
                 errors["base"] = "closed_not_below_open"
-            elif not _ranges_overlap([*self._shades, user_input]):
+            elif not _ranges_overlap([*self._new_shades.values(), user_input]):
                 errors["base"] = "ranges_do_not_overlap"
             else:
-                self._shades.append({CONF_ENTITY_ID: entity_id, **user_input})
-                if len(self._shades) == len(self._entity_ids):
+                self._new_shades[entity_id] = {CONF_ENTITY_ID: entity_id, **user_input}
+                if len(self._new_shades) == len(self._entity_ids):
                     return await self.async_step_travel()
                 return await self.async_step_shade()  # the next shade's form
 
         return self.async_show_form(
             step_id="shade",
             data_schema=self.add_suggested_values_to_schema(
-                SHADE_SCHEMA, user_input or self._previous.get(entity_id, {})
+                SHADE_SCHEMA, user_input or self._old_shades.get(entity_id, {})
             ),
             errors=errors,
             description_placeholders={
                 "name": self._friendly_name(entity_id),
-                "index": str(len(self._shades) + 1),
+                "index": str(len(self._new_shades) + 1),
                 "count": str(len(self._entity_ids)),
             },
         )
@@ -290,7 +303,7 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Measure the tallest shade's travel time and, optionally, its curve."""
         tallest = max(
-            self._shades,
+            self._new_shades.values(),
             key=lambda shade: shade[CONF_OPEN_HEIGHT] - shade[CONF_CLOSED_HEIGHT],
         )
         low, high = halfway_height_range(
@@ -301,7 +314,7 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             halfway_height = user_input.get(CONF_HALFWAY_HEIGHT)
             shades = [
                 {**shade, **user_input} if shade is tallest else shade
-                for shade in self._shades
+                for shade in self._new_shades.values()
             ]
             if halfway_height is None:
                 pass
@@ -315,9 +328,9 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="travel",
             data_schema=self.add_suggested_values_to_schema(
-                # Suggested only if the same shade was measured before.
+                # Prefilled only if the same shade was measured before.
                 TRAVEL_SCHEMA,
-                user_input or self._previous.get(tallest[CONF_ENTITY_ID], {}),
+                user_input or self._old_shades.get(tallest[CONF_ENTITY_ID], {}),
             ),
             errors=errors,
             description_placeholders={

@@ -16,12 +16,14 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
+import voluptuous as vol
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.cover import CoverEntity, CoverEntityFeature
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigEntry, ConfigFlow
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import section
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -40,6 +42,8 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.aligned_shade_group.const import DOMAIN
+
+from .common import SHADES, SPEED
 
 GROUP = "cover.living_room"
 FAVORITE = 50
@@ -414,6 +418,76 @@ class Room:
     def worst_misalignment(self) -> float:
         """Worst misalignment over the recorded history."""
         return max(self.misalignment(snapshot) for snapshot in self.history)
+
+
+# Hemline spread allowed while moving, in inches: timers fire on the next
+# 0.1 s tick (up to about 0.5 in for a roller near the top of its travel), plus
+# whole-percent position rounding.
+HEIGHT_TOLERANCE = 1.0
+
+
+def same_tops(position_pct: int = 0) -> list[ShadeSpec]:
+    return [ShadeSpec.from_config(config, SPEED, position_pct) for config in SHADES]
+
+
+def matched_rolls(position_pct: float) -> list[ShadeSpec]:
+    """Three shades whose rolls match at every hemline height.
+
+    "high" has the longest range, so it's the one measured; "tall" reaches
+    below it and "low" further still, so the curve must be extended. "tall"
+    covers more of the group's positions than "high" (it's lower on the roll,
+    where the hemline moves slower), so the travel time must be tied to the
+    measured shade rather than the widest window.
+    """
+    # A stronger curve than the living room's, so extension errors show.
+    curvature = 0.0025
+    specs = [
+        ShadeSpec(
+            name="tall",
+            closed_height=30,
+            open_height=100,
+            travel_time_s=30,
+            position_pct=position_pct,
+            roll_curvature=curvature,
+            roll_top_height=100,
+        ),
+        ShadeSpec(
+            name="high",
+            closed_height=50,
+            open_height=125,
+            travel_time_s=0,
+            position_pct=position_pct,
+            roll_curvature=curvature,
+            roll_top_height=100,
+        ),
+        ShadeSpec(
+            name="low",
+            closed_height=12,
+            open_height=60,
+            travel_time_s=0,
+            position_pct=position_pct,
+            roll_curvature=curvature,
+            roll_top_height=100,
+        ),
+    ]
+    for spec in specs[1:]:
+        spec.travel_time_s = 30 * spec.full_turns / specs[0].full_turns
+    return specs
+
+
+def prefilled_answers(flow: Any) -> dict[str, Any]:
+    """A form's prefilled values, as if submitted without changing anything."""
+
+    def answers(schema: vol.Schema) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in schema.schema.items():
+            if isinstance(value, section):
+                result[str(key)] = answers(value.schema)
+            elif key.description and "suggested_value" in key.description:
+                result[str(key)] = key.description["suggested_value"]
+        return result
+
+    return answers(flow["data_schema"])
 
 
 class _PicoEntryFlow(ConfigFlow):

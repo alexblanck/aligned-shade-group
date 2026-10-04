@@ -71,8 +71,9 @@ Most bugs are at the seams, so tests favor whole flows over individual methods.
   as soon as they're commanded, and their real position only when stopped.
 - [tests/test_alignment.py](tests/test_alignment.py) keeps only edge cases of
   the math that are awkward to reach end to end;
-  [tests/test_config_flow.py](tests/test_config_flow.py) covers validation
-  errors.
+  [tests/test_config_flow.py](tests/test_config_flow.py) covers the setup and
+  Reconfigure forms: validation errors, plus whole flows run in the simulated
+  room.
 
 When adding or changing behavior:
 
