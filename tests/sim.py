@@ -40,7 +40,7 @@ from pytest_homeassistant_custom_component.common import (
     setup_test_component_platform,
 )
 
-from custom_components.aligned_cover_group.const import DOMAIN
+from custom_components.aligned_shade_group.const import DOMAIN
 
 GROUP = "cover.living_room"
 FAVORITE = 50

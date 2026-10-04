@@ -1,4 +1,4 @@
-"""Aligned Cover Group: keep side-by-side shades' hemlines even."""
+"""Aligned Shade Group: keep side-by-side shades' hemlines even."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ PLATFORMS = [Platform.COVER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up an aligned cover group from a config entry."""
+    """Set up an aligned shade group from a config entry."""
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

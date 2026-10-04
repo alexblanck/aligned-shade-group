@@ -1,4 +1,4 @@
-"""The aligned cover group entity."""
+"""The aligned shade group entity."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the aligned cover group entity."""
+    """Set up the aligned shade group entity."""
     options = entry.options
     group = matched_roll_group(ShadeConfig(**shade) for shade in options[CONF_SHADES])
     # Only a Pico paired to every shade is used so far.
@@ -118,12 +118,12 @@ async def async_setup_entry(
         ),
         None,
     )
-    entity = AlignedCoverGroup(entry=entry, group=group, pico=pico)
+    entity = AlignedShadeGroup(entry=entry, group=group, pico=pico)
     entry.runtime_data = entity  # for diagnostics
     async_add_entities([entity])
 
 
-class AlignedCoverGroup(CoverEntity):
+class AlignedShadeGroup(CoverEntity):
     """A cover group that keeps its shades' hemlines aligned."""
 
     _attr_should_poll = False
@@ -152,7 +152,7 @@ class AlignedCoverGroup(CoverEntity):
             name=entry.title,
             # Explicitly None, to clear the service type earlier versions set.
             entry_type=None,
-            model="Aligned cover group",
+            model="Aligned shade group",
         )
         self._group = group
         self._pico = pico

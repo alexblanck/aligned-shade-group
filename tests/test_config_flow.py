@@ -9,7 +9,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.aligned_cover_group.const import DOMAIN
+from custom_components.aligned_shade_group.const import DOMAIN
 
 from .common import HIGH_SILL, LOW_SILL, set_shade
 

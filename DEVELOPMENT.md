@@ -1,19 +1,19 @@
 # Development
 
-How to work on Aligned Cover Group. For how alignment and motion work, see
+How to work on Aligned Shade Group. For how alignment and motion work, see
 [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Project layout
 
 | Path | What's there |
 |---|---|
-| `custom_components/aligned_cover_group/roll_profile.py` | Pure math: how a roller's hemline height follows its position (`RollProfile`), and a shade's view of one. No Home Assistant imports |
-| `custom_components/aligned_cover_group/alignment.py` | Pure math: building a group from its settings, alignment, motion plans. No Home Assistant imports |
-| `custom_components/aligned_cover_group/cover.py` | The group entity: runs plans as service calls and timers, estimates positions while a plan runs |
-| `custom_components/aligned_cover_group/pico.py` | Finding a Pico's On/Stop/Off buttons from its device |
-| `custom_components/aligned_cover_group/config_flow.py` | Create/edit screens (config and options flows) |
-| `custom_components/aligned_cover_group/diagnostics.py` | "Download diagnostics": settings plus the group's live state |
-| `custom_components/aligned_cover_group/translations/en.json` | UI text for those screens |
+| `custom_components/aligned_shade_group/roll_profile.py` | Pure math: how a roller's hemline height follows its position (`RollProfile`), and a shade's view of one. No Home Assistant imports |
+| `custom_components/aligned_shade_group/alignment.py` | Pure math: building a group from its settings, alignment, motion plans. No Home Assistant imports |
+| `custom_components/aligned_shade_group/cover.py` | The group entity: runs plans as service calls and timers, estimates positions while a plan runs |
+| `custom_components/aligned_shade_group/pico.py` | Finding a Pico's On/Stop/Off buttons from its device |
+| `custom_components/aligned_shade_group/config_flow.py` | Create/edit screens (config and options flows) |
+| `custom_components/aligned_shade_group/diagnostics.py` | "Download diagnostics": settings plus the group's live state |
+| `custom_components/aligned_shade_group/translations/en.json` | UI text for those screens |
 | `tests/sim.py` | Simulated shades and Pico used by the scenario tests |
 | `tests/test_room.py` | End-to-end scenarios (most tests live here) |
 | `docs/DESIGN.md` | Design notes and decisions |
@@ -43,7 +43,7 @@ Run all three before considering a change done:
 ```bash
 pytest
 ruff check custom_components tests && ruff format custom_components tests
-mypy --strict custom_components/aligned_cover_group
+mypy --strict custom_components/aligned_shade_group
 ```
 
 Handy pytest variations:
@@ -122,7 +122,7 @@ Either:
 
 - **HACS:** develop on `main`; in HACS, Redownload the integration, pick
   `main`, and restart Home Assistant after each push.
-- **Manual:** copy `custom_components/aligned_cover_group` into your Home
+- **Manual:** copy `custom_components/aligned_shade_group` into your Home
   Assistant config's `custom_components/` folder and restart.
 
 Turn on debug logging (see the README) to see each plan the group makes: the positions
@@ -132,7 +132,7 @@ command with its delay.
 ## Icon
 
 The source is [assets/icon.svg](assets/icon.svg). Home Assistant shows the PNG
-exports in `custom_components/aligned_cover_group/brand/` (`icon.png` at
+exports in `custom_components/aligned_shade_group/brand/` (`icon.png` at
 256 px, `icon@2x.png` at 512 px, transparent background). After editing the
 SVG, re-export both, for example with headless Chrome:
 
@@ -144,13 +144,13 @@ for size in 256 512; do
     --window-size=$size,$size --allow-file-access-from-files \
     --screenshot=/tmp/icon_$size.png file:///tmp/icon.html
 done
-cp /tmp/icon_256.png custom_components/aligned_cover_group/brand/icon.png
-cp /tmp/icon_512.png custom_components/aligned_cover_group/brand/icon@2x.png
+cp /tmp/icon_256.png custom_components/aligned_shade_group/brand/icon.png
+cp /tmp/icon_512.png custom_components/aligned_shade_group/brand/icon@2x.png
 ```
 
 ## Releasing
 
-1. Bump `version` in `custom_components/aligned_cover_group/manifest.json`.
+1. Bump `version` in `custom_components/aligned_shade_group/manifest.json`.
 2. Commit, tag `vX.Y.Z`, and push the tag.
 3. Publish a GitHub release for the tag; HACS offers releases as versions.
 

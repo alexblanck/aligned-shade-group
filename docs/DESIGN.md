@@ -1,4 +1,4 @@
-# Aligned Cover Group — design
+# Aligned Shade Group — design
 
 A Home Assistant custom integration (HACS-installable) that groups side-by-side
 window shades of different sizes into a single `cover` entity whose bottom edges

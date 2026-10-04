@@ -1,6 +1,6 @@
-"""Constants for Aligned Cover Group."""
+"""Constants for Aligned Shade Group."""
 
-DOMAIN = "aligned_cover_group"
+DOMAIN = "aligned_shade_group"
 
 # Each shade's settings. The measured shade (the tallest when set up) also has
 # its travel time and, optionally, its hemline height at 50%.

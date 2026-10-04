@@ -1,4 +1,4 @@
-"""Diagnostics for Aligned Cover Group."""
+"""Diagnostics for Aligned Shade Group."""
 
 from __future__ import annotations
 

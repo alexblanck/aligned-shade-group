@@ -1,4 +1,4 @@
-"""Config and options flows for Aligned Cover Group."""
+"""Config and options flows for Aligned Shade Group."""
 
 from __future__ import annotations
 
@@ -263,8 +263,8 @@ class _ShadeSteps(ConfigEntryBaseFlow):
         raise NotImplementedError
 
 
-class AlignedCoverGroupConfigFlow(_ShadeSteps, ConfigFlow, domain=DOMAIN):
-    """Create an aligned cover group."""
+class AlignedShadeGroupConfigFlow(_ShadeSteps, ConfigFlow, domain=DOMAIN):
+    """Create an aligned shade group."""
 
     VERSION = 2
 
@@ -276,9 +276,9 @@ class AlignedCoverGroupConfigFlow(_ShadeSteps, ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(
         config_entry: ConfigEntry,
-    ) -> AlignedCoverGroupOptionsFlow:
+    ) -> AlignedShadeGroupOptionsFlow:
         """Return the options flow."""
-        return AlignedCoverGroupOptionsFlow()
+        return AlignedShadeGroupOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -307,8 +307,8 @@ class AlignedCoverGroupConfigFlow(_ShadeSteps, ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(title=self._name, data={}, options=options)
 
 
-class AlignedCoverGroupOptionsFlow(_ShadeSteps, OptionsFlowWithReload):
-    """Edit an aligned cover group."""
+class AlignedShadeGroupOptionsFlow(_ShadeSteps, OptionsFlowWithReload):
+    """Edit an aligned shade group."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

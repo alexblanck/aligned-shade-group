@@ -5,12 +5,12 @@ Most behavior is covered by the simulated scenarios in test_room.py.
 
 import pytest
 
-from custom_components.aligned_cover_group.alignment import (
+from custom_components.aligned_shade_group.alignment import (
     Move,
     ShadeConfig,
     matched_roll_group,
 )
-from custom_components.aligned_cover_group.roll_profile import RollProfile
+from custom_components.aligned_shade_group.roll_profile import RollProfile
 
 from . import common
 

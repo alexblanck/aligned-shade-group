@@ -1,11 +1,15 @@
-<img src="https://raw.githubusercontent.com/alexblanck/aligned-cover-group/main/custom_components/aligned_cover_group/brand/icon@2x.png" alt="" width="128" align="right">
+<img src="https://raw.githubusercontent.com/alexblanck/aligned-shade-group/main/custom_components/aligned_shade_group/brand/icon@2x.png" alt="" width="128" align="right">
 
-# Aligned Cover Group
+# Aligned Shade Group
 
-A Home Assistant integration that groups side-by-side window shades of different
-sizes into one cover whose bottom edges (hemlines) stay level — at rest and
-while moving. Optionally drives a Lutron Caseta Pico so every shade starts and
-stops at exactly the same moment.
+A Home Assistant cover group for side-by-side window shades of different
+sizes: one cover whose bottom edges (hemlines) stay level — at rest and while
+moving. Optionally drives a Lutron Caseta Pico so every shade starts and stops
+at exactly the same moment.
+
+"Shades" means any window covering that raises and lowers with a position,
+such as roller or cellular shades or blinds; the optional roller-curve
+correction is for roller shades.
 
 Some higher-end shades do this themselves: Lutron's [Intelligent Hembar
 Alignment](https://www.lutron.com/us/en/window-treatments/shades/roller-shades)
@@ -61,8 +65,8 @@ See [docs/DESIGN.md](docs/DESIGN.md) for details.
 ## Installation (HACS)
 
 1. HACS → ⋮ → Custom repositories → add this repository as an **Integration**.
-2. Install **Aligned Cover Group** and restart Home Assistant.
-3. Settings → Devices & services → Add integration → **Aligned Cover Group**.
+2. Install **Aligned Shade Group** and restart Home Assistant.
+3. Settings → Devices & services → Add integration → **Aligned Shade Group**.
    Each group gets its own device, which you can assign to an area.
 
 ## Pico setup (optional)
@@ -99,7 +103,7 @@ restarts:
 ```yaml
 logger:
   logs:
-    custom_components.aligned_cover_group: debug
+    custom_components.aligned_shade_group: debug
 ```
 
 ## Development
