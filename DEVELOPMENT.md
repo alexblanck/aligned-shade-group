@@ -17,6 +17,7 @@ How to work on Aligned Shade Group. For how alignment and motion work, see
 | `tests/sim.py` | Simulated shades and Pico used by the scenario tests |
 | `tests/test_room.py` | End-to-end scenarios (most tests live here) |
 | `docs/DESIGN.md` | Design notes and decisions |
+| `docs/IDEAS.md` | Known problems and ideas for later |
 
 ## Setup
 
