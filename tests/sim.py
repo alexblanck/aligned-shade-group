@@ -338,12 +338,14 @@ class Room:
             self.shades.values(),
             key=lambda shade: shade.spec.open_height - shade.spec.closed_height,
         )
-        answers: dict[str, float] = {
+        answers: dict[str, Any] = {
             "travel_time_s": self._configured_travel_time_s
             or tallest.spec.travel_time_s
         }
         if tallest.spec.roll_curvature:
-            answers["halfway_height"] = tallest.spec.hemline_at(50)
+            answers["roller_curve"] = {"halfway_height": tallest.spec.hemline_at(50)}
+        else:
+            answers["roller_curve"] = {}
         return await configure(flow["flow_id"], answers)
 
     async def command(self, service: str, **data: Any) -> None:

@@ -48,6 +48,8 @@ FIELD_NAME = "name"
 FIELD_SHADES = "shades"
 FIELD_PICO = "pico"  # a section, holding:
 FIELD_PICO_DEVICE = "device_id"
+# A section holding CONF_HALFWAY_HEIGHT, stored with CONF_TRAVEL_TIME_S.
+FIELD_ROLLER_CURVE = "roller_curve"
 
 HEIGHT_SELECTOR = selector.NumberSelector(
     selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX, step="any")
@@ -55,25 +57,31 @@ HEIGHT_SELECTOR = selector.NumberSelector(
 
 SHADE_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_CLOSED_HEIGHT): HEIGHT_SELECTOR,
         vol.Required(CONF_OPEN_HEIGHT): HEIGHT_SELECTOR,
+        vol.Required(CONF_CLOSED_HEIGHT): HEIGHT_SELECTOR,
     }
 )
 
-TRAVEL_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_TRAVEL_TIME_S): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=300,
-                step=0.1,
-                unit_of_measurement="s",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        ),
-        vol.Optional(CONF_HALFWAY_HEIGHT): HEIGHT_SELECTOR,
-    }
-)
+
+def _travel_schema(curve_collapsed: bool) -> vol.Schema:
+    """Schema for the travel time and, in a section, the optional 50% height."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_TRAVEL_TIME_S): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=300,
+                    step=0.1,
+                    unit_of_measurement="s",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Required(FIELD_ROLLER_CURVE): section(
+                vol.Schema({vol.Optional(CONF_HALFWAY_HEIGHT): HEIGHT_SELECTOR}),
+                {"collapsed": curve_collapsed},
+            ),
+        }
+    )
 
 
 # Covers offered as shades: ones that raise and lower to a position, so not
@@ -311,9 +319,13 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         errors: dict[str, str] = {}
         if user_input is not None:
-            halfway_height = user_input.get(CONF_HALFWAY_HEIGHT)
+            measurements = {
+                CONF_TRAVEL_TIME_S: user_input[CONF_TRAVEL_TIME_S],
+                **user_input[FIELD_ROLLER_CURVE],
+            }
+            halfway_height = measurements.get(CONF_HALFWAY_HEIGHT)
             shades = [
-                {**shade, **user_input} if shade is tallest else shade
+                {**shade, **measurements} if shade is tallest else shade
                 for shade in self._new_shades.values()
             ]
             if halfway_height is None:
@@ -325,12 +337,21 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             if not errors:
                 return self._async_save(shades)
 
+        # Prefilled only if the same shade was measured before.
+        old = self._old_shades.get(tallest[CONF_ENTITY_ID], {})
+        prefill: dict[str, Any] = {FIELD_ROLLER_CURVE: {}}
+        if CONF_TRAVEL_TIME_S in old:
+            prefill[CONF_TRAVEL_TIME_S] = old[CONF_TRAVEL_TIME_S]
+        if CONF_HALFWAY_HEIGHT in old:
+            prefill[FIELD_ROLLER_CURVE][CONF_HALFWAY_HEIGHT] = old[CONF_HALFWAY_HEIGHT]
+        shown = user_input or prefill
         return self.async_show_form(
             step_id="travel",
             data_schema=self.add_suggested_values_to_schema(
-                # Prefilled only if the same shade was measured before.
-                TRAVEL_SCHEMA,
-                user_input or self._old_shades.get(tallest[CONF_ENTITY_ID], {}),
+                _travel_schema(
+                    curve_collapsed=CONF_HALFWAY_HEIGHT not in shown[FIELD_ROLLER_CURVE]
+                ),
+                shown,
             ),
             errors=errors,
             description_placeholders={

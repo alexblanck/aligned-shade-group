@@ -3,7 +3,6 @@
     "step": {
       "user": {
         "title": "Create an aligned shade group",
-        "description": "Group side-by-side shades so their bottom edges stay level.",
         "data": {
           "name": "Name",
           "shades": "Shades"
@@ -22,12 +21,11 @@
         },
         "data_description": {
           "name": "For example, “Living Room Aligned”.",
-          "shades": "The side-by-side shades to keep level. Lists shades, blinds and shutters that can be set to a position; if one is missing, set its “Show as” to Shade in its entity settings."
+          "shades": "The side-by-side shades to keep level. If one is missing, check its “Show as” in its entity settings."
         }
       },
       "reconfigure": {
         "title": "Edit {name}",
-        "description": "Group side-by-side shades so their bottom edges stay level.",
         "data": {
           "name": "Name",
           "shades": "Shades"
@@ -46,27 +44,37 @@
         },
         "data_description": {
           "name": "Renames the group's device and, unless you've renamed it, its entity.",
-          "shades": "The side-by-side shades to keep level. Lists shades, blinds and shutters that can be set to a position; if one is missing, set its “Show as” to Shade in its entity settings."
+          "shades": "The side-by-side shades to keep level. If one is missing, check its “Show as” in its entity settings."
         }
       },
       "shade": {
         "title": "{name} (shade {index} of {count})",
-        "description": "Where is this shade's bottom edge (hemline) when fully closed and when fully open? Measure every shade from the same point, such as inches from the floor.",
+        "description": "Where is this shade's bottom edge (hemline) when fully open and when fully closed? Measure every shade from the same point, such as inches from the floor.",
         "data": {
-          "closed_height": "Hemline height when fully closed",
-          "open_height": "Hemline height when fully open"
+          "open_height": "Open height",
+          "closed_height": "Closed height"
         }
       },
       "travel": {
         "title": "Travel time",
-        "description": "How long does {name}, the tallest shade, take to go from fully closed to fully open? All shades in the group are assumed to move at the same speed.\n\nRoller shades also don't move evenly: the roll is fattest when open, so the hemline drops faster near the top. If your shades' hemlines don't line up partway, set {name} to 50% on its own and enter its hemline height. This assumes the shades' rolls match: same fabric and tube, with the same amount of fabric wound on whenever their hemlines are level.",
+        "description": "How long does {name}, the tallest shade, take to go from fully closed to fully open? All shades are assumed to move at the same speed.",
         "data": {
-          "travel_time_s": "Full travel time",
-          "halfway_height": "Hemline height at 50% (optional)"
+          "travel_time_s": "Full travel time"
         },
         "data_description": {
-          "travel_time_s": "If you're unsure, round down rather than up.",
-          "halfway_height": "For {name}, between {low} and {high}. Leave empty if the shades line up partway already."
+          "travel_time_s": "In seconds."
+        },
+        "sections": {
+          "roller_curve": {
+            "name": "Roller curve correction (optional)",
+            "description": "A roller shade's roll is fattest when open, so its hemline drops faster near the top. If your shades' hemlines don't line up partway, set {name} to 50% on its own and enter its hemline height.\n\nThis assumes the shades' rolls match: same fabric and tube, with the same amount of fabric wound on whenever their hemlines are level.",
+            "data": {
+              "halfway_height": "Hemline height at 50%"
+            },
+            "data_description": {
+              "halfway_height": "Between {low} and {high}. Leave empty if the shades line up partway already."
+            }
+          }
         }
       }
     },

@@ -194,12 +194,13 @@ async def test_halfway_height_must_fit_a_roller(hass: HomeAssistant) -> None:
 
     for too_far in (50, 30):
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"travel_time_s": 36, "halfway_height": too_far}
+            result["flow_id"],
+            {"travel_time_s": 36, "roller_curve": {"halfway_height": too_far}},
         )
         assert result["errors"] == {"base": "halfway_out_of_range"}
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"travel_time_s": 36, "halfway_height": 44}
+        result["flow_id"], {"travel_time_s": 36, "roller_curve": {"halfway_height": 44}}
     )
     assert result["type"] == "create_entry"
     # Stored with the shade they were measured on: the tallest.
@@ -238,7 +239,7 @@ async def test_halfway_height_extends_to_shades_above_the_tallest(
     # curve is extended up to it.
     result = await configure_shades(hass, [(50, 90), (20, 80)])
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"travel_time_s": 30, "halfway_height": 48}
+        result["flow_id"], {"travel_time_s": 30, "roller_curve": {"halfway_height": 48}}
     )
     assert result["type"] == "create_entry"
 
@@ -250,7 +251,7 @@ async def test_halfway_height_whose_curve_cannot_reach_every_shade(
     # as if the roll ran out of fabric, short of the other shade's 30.
     result = await configure_shades(hass, [(40, 100), (30, 70)])
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"travel_time_s": 30, "halfway_height": 60}
+        result["flow_id"], {"travel_time_s": 30, "roller_curve": {"halfway_height": 60}}
     )
     assert result["errors"] == {"base": "halfway_cant_reach"}
 
@@ -351,6 +352,10 @@ async def test_reconfigure_changes_only_what_was_edited(
     configure = hass.config_entries.flow.async_configure
     flow = await configure(flow["flow_id"], {**prefilled_answers(flow), "name": "Den"})
     while flow["type"] == "form":
+        if flow["step_id"] == "travel":
+            # The saved 50% height opens the roller curve section.
+            curve = flow["data_schema"].schema["roller_curve"]
+            assert curve.options["collapsed"] is False
         flow = await configure(flow["flow_id"], prefilled_answers(flow))
     await hass.async_block_till_done()
 
