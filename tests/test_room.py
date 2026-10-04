@@ -748,6 +748,20 @@ async def test_level_shades_start_together_without_a_pico(
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
+async def test_leader_is_commanded_at_once(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # Seen on the living room shades: converting the leader's hemline back to
+    # a position left a tiny delay, so its command went through a timer.
+    left_1, left_2 = living_room(0)
+    left_1.position_pct, left_2.position_pct = 56, 66
+    room = await build_room(hass, freezer, [left_1, left_2], pico=False)
+
+    await room.command("close_cover")
+
+    assert room["cover.left_1"].starts, "the leader waited for a timer"
+
+
 async def test_level_followers_start_together(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:

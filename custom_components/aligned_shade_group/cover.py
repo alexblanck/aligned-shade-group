@@ -489,12 +489,10 @@ class AlignedShadeGroup(CoverEntity):
         )
         direction = self._group_direction(positions_pct_by_id, target_pct)
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            _LOGGER.debug(
-                "%s",
-                self._describe_plan(
-                    plan, target_pct, positions_pct_by_id, positions_source, pico
-                ),
-            )
+            for line in self._describe_plan(
+                plan, target_pct, positions_pct_by_id, positions_source, pico
+            ):
+                _LOGGER.debug("%s: %s", self.entity_id, line)
         if plan.moves:
             await self._async_run_plan(plan, direction)
         else:
@@ -527,8 +525,12 @@ class AlignedShadeGroup(CoverEntity):
         positions_pct_by_id: dict[str, int],
         positions_source: str,
         pico: PicoButtons | None,
-    ) -> str:
-        """A plan as readable lines: the Pico, then each shade's move."""
+    ) -> list[str]:
+        """A plan as log lines: a summary, the Pico, then each shade's move.
+
+        Logged one line each, so every line can be found by grepping for the
+        group or a shade.
+        """
         if plan.pico is not None and pico is not None:
             pico_line = f"presses {pico.toward(plan.pico)}"
         elif self._pico is None:
@@ -540,10 +542,10 @@ class AlignedShadeGroup(CoverEntity):
         else:
             pico_line = "not needed"
         lines = [
-            f"{self.entity_id}: plan to {target_pct}% "
+            f"plan to {target_pct}% "
             f"(hemline {self._group.height_for_position(target_pct):.1f}), "
             f"{plan.duration_s():.1f}s, from {positions_source} positions",
-            f"  Pico: {pico_line}",
+            f"plan: Pico {pico_line}",
         ]
         moving = set()
         for move in plan.moves:
@@ -555,17 +557,19 @@ class AlignedShadeGroup(CoverEntity):
             else:
                 start = "with the Pico"
             if move.from_pct == move.target_pct:
-                lines.append(f"  {move.shade.entity_id}: holds at {move.target_pct}%")
+                lines.append(
+                    f"plan: {move.shade.entity_id} holds at {move.target_pct}%"
+                )
                 continue
             lines.append(
-                f"  {move.shade.entity_id}: {move.from_pct}% "
+                f"plan: {move.shade.entity_id} {move.from_pct}% "
                 f"(hemline {move.from_height():.1f}) -> {move.target_pct}%, "
                 f"starts {start}, arrives at {move.arrival_s():.1f}s"
             )
         for entity_id, position_pct in positions_pct_by_id.items():
             if entity_id not in moving:
-                lines.append(f"  {entity_id}: stays at {position_pct}%")
-        return "\n".join(lines)
+                lines.append(f"plan: {entity_id} stays at {position_pct}%")
+        return lines
 
     @callback
     def _planning_positions(self) -> dict[str, int]:

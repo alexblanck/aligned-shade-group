@@ -387,8 +387,10 @@ def _staggered(moves: list[Move], tolerance_height: float) -> list[Move]:
     if not groups:
         return []
     leader = groups[0][0]
-    staggered: list[Move] = []
-    for group in groups:
+    # The leader's group starts at once: converting the leader's hemline back
+    # to a position can leave a tiny nonzero delay.
+    staggered = [replace(move, delay_s=0.0) for move in groups[0]]
+    for group in groups[1:]:
         # How long the leader takes to move from where it starts to this
         # group's hemline: positions change at a constant rate.
         delay_s = (
