@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -20,7 +19,7 @@ from typing import Any
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.cover import CoverEntity, CoverEntityFeature
-from homeassistant.config_entries import ConfigEntry, ConfigFlow
+from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigEntry, ConfigFlow
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -301,21 +300,26 @@ class Room:
         flow = await self.hass.config_entries.flow.async_configure(
             flow["flow_id"], group_input
         )
-        flow = await self.answer_shade_steps(
-            flow, self.hass.config_entries.flow.async_configure
-        )
+        flow = await self.answer_shade_steps(flow)
         assert flow["type"] == "create_entry", flow
         await self.hass.async_block_till_done()
         self.entry = self.hass.config_entries.async_entries(DOMAIN)[0]
 
-    async def answer_shade_steps(
-        self, flow: Any, configure: Callable[..., Awaitable[Any]]
-    ) -> Any:
+    async def start_reconfigure(self) -> Any:
+        """Open the group's Reconfigure form, like a user would."""
+        assert self.entry is not None
+        return await self.hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": SOURCE_RECONFIGURE, "entry_id": self.entry.entry_id},
+        )
+
+    async def answer_shade_steps(self, flow: Any) -> Any:
         """Enter each shade's heights, then the tallest shade's travel time.
 
         The travel time entered is the tallest shade's real one unless the
         room was built with a different `configured_travel_time_s`.
         """
+        configure = self.hass.config_entries.flow.async_configure
         for shade in self.shades.values():
             assert flow["step_id"] == "shade", flow
             flow = await configure(

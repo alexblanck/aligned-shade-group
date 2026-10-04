@@ -1,4 +1,4 @@
-"""Config and options flows for Aligned Shade Group."""
+"""Setup and Reconfigure screens for Aligned Shade Group."""
 
 from __future__ import annotations
 
@@ -7,18 +7,14 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.config_entries import (
-    ConfigEntry,
-    ConfigEntryBaseFlow,
+    SOURCE_RECONFIGURE,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlowWithReload,
 )
 from homeassistant.const import (
     ATTR_FRIENDLY_NAME,
     ATTR_SUPPORTED_FEATURES,
-    CONF_DEVICE_ID,
     CONF_ENTITY_ID,
-    CONF_NAME,
     CONF_TYPE,
     STATE_UNAVAILABLE,
 )
@@ -38,12 +34,19 @@ from .const import (
     CONF_PICO_STOP,
     CONF_SHADES,
     CONF_TRAVEL_TIME_S,
-    CONTROL_PICO,
     DOMAIN,
-    PICO_SECTION,
+    ControlType,
 )
 from .pico import PicoButtons, PicoButtonsError, find_pico_buttons
 from .roll_profile import halfway_height_range
+
+# Setup form fields that aren't stored as they are (CONF_* keys are stored):
+# the name becomes the entry's title, the chosen shades become each shade's
+# settings, and the Pico device becomes its buttons.
+FIELD_NAME = "name"
+FIELD_SHADES = "shades"
+FIELD_PICO = "pico"  # a section, holding:
+FIELD_PICO_DEVICE = "device_id"
 
 _HEIGHT = selector.NumberSelector(
     selector.NumberSelectorConfig(mode=selector.NumberSelectorMode.BOX, step="any")
@@ -72,8 +75,26 @@ TRAVEL_SCHEMA = vol.Schema(
 )
 
 
-def _group_schema(exclude: list[str], pico_collapsed: bool) -> vol.Schema:
-    """Schema for choosing the covers and, in a section, an optional Pico."""
+# Covers offered as shades: ones that raise and lower to a position, so not
+# garage doors, gates or sideways curtains. A shade with no device class can
+# be offered by setting its "Show as" to Shade in its entity settings.
+SHADE_FILTER = selector.EntityWithDeviceFilterSelectorConfig(
+    domain="cover",
+    device_class=["shade", "blind", "shutter"],
+    supported_features=["cover.CoverEntityFeature.SET_POSITION"],
+)
+
+
+def _group_schema(hass: HomeAssistant, pico_collapsed: bool) -> vol.Schema:
+    """Schema for the name, the shades and, in a section, an optional Pico.
+
+    Aligned shade groups, this one included, aren't offered as shades.
+    """
+    groups = [
+        entry.entity_id
+        for entry in er.async_get(hass).entities.values()
+        if entry.platform == DOMAIN
+    ]
     pico = selector.DeviceSelector(
         selector.DeviceSelectorConfig(
             integration="lutron_caseta",
@@ -82,13 +103,14 @@ def _group_schema(exclude: list[str], pico_collapsed: bool) -> vol.Schema:
     )
     return vol.Schema(
         {
-            vol.Required(CONF_SHADES): selector.EntitySelector(
+            vol.Required(FIELD_NAME): selector.TextSelector(),
+            vol.Required(FIELD_SHADES): selector.EntitySelector(
                 selector.EntitySelectorConfig(
-                    domain="cover", multiple=True, exclude_entities=exclude
+                    filter=SHADE_FILTER, multiple=True, exclude_entities=groups
                 )
             ),
-            vol.Required(PICO_SECTION): section(
-                vol.Schema({vol.Optional(CONF_DEVICE_ID): pico}),
+            vol.Required(FIELD_PICO): section(
+                vol.Schema({vol.Optional(FIELD_PICO_DEVICE): pico}),
                 {"collapsed": pico_collapsed},
             ),
         }
@@ -107,19 +129,14 @@ def _shared_curve_fits(shades: list[dict[str, Any]]) -> bool:
     return True
 
 
-def _validate_group(hass: HomeAssistant, user_input: dict[str, Any]) -> str | None:
-    """Return an error key for invalid group input, or None."""
-    if len(user_input[CONF_SHADES]) < 2:
+def _validate_shades(hass: HomeAssistant, entity_ids: list[str]) -> str | None:
+    """Return an error key if these can't be a group's shades, or None."""
+    if len(entity_ids) < 2:
         return "too_few_shades"
-    for entity_id in user_input[CONF_SHADES]:
+    for entity_id in entity_ids:
         features = _supported_features(hass, entity_id)
         if features is not None and features & REQUIRED_FEATURES != REQUIRED_FEATURES:
             return "cover_unsupported"
-    if device_id := user_input.get(PICO_SECTION, {}).get(CONF_DEVICE_ID):
-        try:
-            find_pico_buttons(hass, device_id)
-        except PicoButtonsError as err:
-            return err.reason
     return None
 
 
@@ -140,34 +157,106 @@ def _ranges_overlap(shades: list[dict[str, Any]]) -> bool:
     return bool(highest_closed < lowest_open)
 
 
-class _ShadeSteps(ConfigEntryBaseFlow):
-    """Steps shared by the config and options flows.
+class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Create an aligned shade group, or edit one.
 
-    After the group step, one "shade" step runs per selected cover to collect
-    its heights, then a "travel" step measures the tallest shade: its travel
+    Creating starts at the "user" step and editing (Reconfigure, in the
+    entry's menu) at the "reconfigure" step. Both choose the name, shades and
+    an optional Pico, then run one "shade" step per shade to collect its
+    heights, then a "travel" step that measures the tallest shade: its travel
     time (all shades are assumed to move at the same speed) and, optionally,
     its 50% height. Those are stored with that shade.
     """
 
-    _entity_ids: list[str]
-    _pico: PicoButtons | None
-    _shades: list[dict[str, Any]]
-    # Stored settings by entity id, when editing, to suggest as answers.
-    _previous: dict[str, dict[str, Any]]
+    VERSION = 3
 
-    def _start_shades(self, user_input: dict[str, Any]) -> None:
-        self._entity_ids = user_input[CONF_SHADES]
-        # Already checked by _validate_group, so the buttons are found.
-        device_id = user_input.get(PICO_SECTION, {}).get(CONF_DEVICE_ID)
-        self._pico = find_pico_buttons(self.hass, device_id) if device_id else None
+    def __init__(self) -> None:
+        """Initialize the flow."""
+        self._name = ""
+        self._entity_ids: list[str] = []
+        self._pico: PicoButtons | None = None
+        # Each shade's settings so far, in the order the shades were chosen.
+        self._shades: list[dict[str, Any]] = []
+        # When editing, the stored settings by entity id, to suggest as answers.
+        self._previous: dict[str, dict[str, Any]] = {}
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create a group: choose its name, shades and optional Pico."""
+        return await self._async_step_group("user", user_input, suggested={})
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit a group, starting from its current settings."""
+        entry = self._get_reconfigure_entry()
+        self._previous = {
+            shade[CONF_ENTITY_ID]: shade for shade in entry.data[CONF_SHADES]
+        }
+        suggested = {
+            FIELD_NAME: entry.title,
+            FIELD_SHADES: list(self._previous),
+            FIELD_PICO: self._pico_suggestion(entry.data[CONF_CONTROLS]),
+        }
+        return await self._async_step_group("reconfigure", user_input, suggested)
+
+    async def _async_step_group(
+        self,
+        step_id: str,
+        user_input: dict[str, Any] | None,
+        suggested: dict[str, Any],
+    ) -> ConfigFlowResult:
+        """Choose the name, shades and Pico, then go on to the first shade."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if error := self._choose(user_input):
+                errors["base"] = error
+            else:
+                return await self.async_step_shade()
+
+        has_pico = bool(suggested.get(FIELD_PICO))
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(
+                _group_schema(self.hass, pico_collapsed=not has_pico),
+                user_input or suggested,
+            ),
+            errors=errors,
+            description_placeholders={"name": suggested.get(FIELD_NAME, "")},
+        )
+
+    def _choose(self, user_input: dict[str, Any]) -> str | None:
+        """Take the chosen name, shades and Pico, or return an error key."""
+        if error := _validate_shades(self.hass, user_input[FIELD_SHADES]):
+            return error
+        pico = None
+        if device_id := user_input[FIELD_PICO].get(FIELD_PICO_DEVICE):
+            try:
+                pico = find_pico_buttons(self.hass, device_id)
+            except PicoButtonsError as err:
+                return err.reason
+        self._name = user_input[FIELD_NAME]
+        self._entity_ids = user_input[FIELD_SHADES]
+        self._pico = pico
         self._shades = []
+        return None
+
+    def _pico_suggestion(self, controls: list[dict[str, Any]]) -> dict[str, str]:
+        """The Pico section's answer for stored controls: the Pico's device."""
+        for control in controls:
+            if control[CONF_TYPE] != ControlType.PICO:
+                continue
+            button = er.async_get(self.hass).async_get(control[CONF_PICO_OPEN])
+            if button and button.device_id:
+                return {FIELD_PICO_DEVICE: button.device_id}
+        return {}
 
     async def async_step_shade(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect heights for one shade."""
-        entity_ids = self._entity_ids
-        entity_id = entity_ids[len(self._shades)]
+        """Collect heights for the next shade."""
+        entity_id = self._entity_ids[len(self._shades)]
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -177,9 +266,9 @@ class _ShadeSteps(ConfigEntryBaseFlow):
                 errors["base"] = "ranges_do_not_overlap"
             else:
                 self._shades.append({CONF_ENTITY_ID: entity_id, **user_input})
-                if len(self._shades) == len(entity_ids):
+                if len(self._shades) == len(self._entity_ids):
                     return await self.async_step_travel()
-                return await self.async_step_shade()
+                return await self.async_step_shade()  # the next shade's form
 
         return self.async_show_form(
             step_id="shade",
@@ -190,7 +279,7 @@ class _ShadeSteps(ConfigEntryBaseFlow):
             description_placeholders={
                 "name": self._friendly_name(entity_id),
                 "index": str(len(self._shades) + 1),
-                "count": str(len(entity_ids)),
+                "count": str(len(self._entity_ids)),
             },
         )
 
@@ -219,21 +308,7 @@ class _ShadeSteps(ConfigEntryBaseFlow):
             elif not _shared_curve_fits(shades):
                 errors["base"] = "halfway_cant_reach"
             if not errors:
-                controls = []
-                if self._pico:
-                    # The form only offers a Pico paired to every shade.
-                    controls.append(
-                        {
-                            CONF_TYPE: CONTROL_PICO,
-                            CONF_SHADES: self._entity_ids,
-                            CONF_PICO_OPEN: self._pico.open,
-                            CONF_PICO_STOP: self._pico.stop,
-                            CONF_PICO_CLOSE: self._pico.close,
-                        }
-                    )
-                return self._async_finish(
-                    {CONF_SHADES: shades, CONF_CONTROLS: controls}
-                )
+                return self._async_save(shades)
 
         return self.async_show_form(
             step_id="travel",
@@ -250,6 +325,28 @@ class _ShadeSteps(ConfigEntryBaseFlow):
             },
         )
 
+    @callback
+    def _async_save(self, shades: list[dict[str, Any]]) -> ConfigFlowResult:
+        """Create the group, or update the one being edited."""
+        controls = []
+        if self._pico:
+            # The form only offers a Pico paired to every shade.
+            controls.append(
+                {
+                    CONF_TYPE: ControlType.PICO,
+                    CONF_SHADES: self._entity_ids,
+                    CONF_PICO_OPEN: self._pico.open,
+                    CONF_PICO_STOP: self._pico.stop,
+                    CONF_PICO_CLOSE: self._pico.close,
+                }
+            )
+        data = {CONF_SHADES: shades, CONF_CONTROLS: controls}
+        if self.source == SOURCE_RECONFIGURE:
+            return self.async_update_reload_and_abort(
+                self._get_reconfigure_entry(), title=self._name, data=data
+            )
+        return self.async_create_entry(title=self._name, data=data)
+
     def _friendly_name(self, entity_id: str) -> str:
         state = self.hass.states.get(entity_id)
         return (
@@ -257,102 +354,3 @@ class _ShadeSteps(ConfigEntryBaseFlow):
             if state
             else entity_id
         )
-
-    @callback
-    def _async_finish(self, options: dict[str, Any]) -> ConfigFlowResult:
-        raise NotImplementedError
-
-
-class AlignedShadeGroupConfigFlow(_ShadeSteps, ConfigFlow, domain=DOMAIN):
-    """Create an aligned shade group."""
-
-    VERSION = 2
-
-    def __init__(self) -> None:
-        """Initialize the flow."""
-        self._previous = {}
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: ConfigEntry,
-    ) -> AlignedShadeGroupOptionsFlow:
-        """Return the options flow."""
-        return AlignedShadeGroupOptionsFlow()
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Choose a name, the covers and an optional Pico."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            if error := _validate_group(self.hass, user_input):
-                errors["base"] = error
-            else:
-                self._name = user_input[CONF_NAME]
-                self._start_shades(user_input)
-                return await self.async_step_shade()
-
-        schema = vol.Schema({vol.Required(CONF_NAME): selector.TextSelector()}).extend(
-            _group_schema([], pico_collapsed=True).schema
-        )
-        return self.async_show_form(
-            step_id="user",
-            data_schema=self.add_suggested_values_to_schema(schema, user_input),
-            errors=errors,
-        )
-
-    @callback
-    def _async_finish(self, options: dict[str, Any]) -> ConfigFlowResult:
-        return self.async_create_entry(title=self._name, data={}, options=options)
-
-
-class AlignedShadeGroupOptionsFlow(_ShadeSteps, OptionsFlowWithReload):
-    """Edit an aligned shade group."""
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Change the covers and Pico."""
-        options = self.config_entry.options
-        self._previous = {
-            shade[CONF_ENTITY_ID]: shade for shade in options[CONF_SHADES]
-        }
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            if error := _validate_group(self.hass, user_input):
-                errors["base"] = error
-            else:
-                self._start_shades(user_input)
-                return await self.async_step_shade()
-
-        own_entities = [
-            entry.entity_id
-            for entry in er.async_entries_for_config_entry(
-                er.async_get(self.hass), self.config_entry.entry_id
-            )
-        ]
-        # The Pico is stored as its buttons; suggest the device they're on.
-        pico = {}
-        for control in options[CONF_CONTROLS]:
-            if control[CONF_TYPE] != CONTROL_PICO:
-                continue
-            button = er.async_get(self.hass).async_get(control[CONF_PICO_OPEN])
-            if button and button.device_id:
-                pico = {CONF_DEVICE_ID: button.device_id}
-        suggested = user_input or {
-            CONF_SHADES: list(self._previous),
-            PICO_SECTION: pico,
-        }
-        return self.async_show_form(
-            step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                _group_schema(own_entities, pico_collapsed=not pico), suggested
-            ),
-            errors=errors,
-            description_placeholders={"name": self.config_entry.title},
-        )
-
-    @callback
-    def _async_finish(self, options: dict[str, Any]) -> ConfigFlowResult:
-        return self.async_create_entry(data=options)

@@ -174,7 +174,7 @@ async def test_halfway_height_must_fit_a_roller(hass: HomeAssistant) -> None:
     )
     assert result["type"] == "create_entry"
     # Stored with the shade they were measured on: the tallest.
-    assert result["options"] == {
+    assert result["data"] == {
         "shades": [
             {"entity_id": HIGH_SILL, "closed_height": 24, "open_height": 84},
             {

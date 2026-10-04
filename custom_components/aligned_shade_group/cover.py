@@ -60,8 +60,8 @@ from .const import (
     CONF_PICO_OPEN,
     CONF_PICO_STOP,
     CONF_SHADES,
-    CONTROL_PICO,
     DOMAIN,
+    ControlType,
 )
 from .pico import PicoButtons
 
@@ -101,8 +101,8 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the aligned shade group entity."""
-    options = entry.options
-    group = matched_roll_group(ShadeConfig(**shade) for shade in options[CONF_SHADES])
+    data = entry.data
+    group = matched_roll_group(ShadeConfig(**shade) for shade in data[CONF_SHADES])
     # Only a Pico paired to every shade is used so far.
     entity_ids = {shade.entity_id for shade in group.shades}
     pico = next(
@@ -112,8 +112,8 @@ async def async_setup_entry(
                 stop=control[CONF_PICO_STOP],
                 close=control[CONF_PICO_CLOSE],
             )
-            for control in options[CONF_CONTROLS]
-            if control[CONF_TYPE] == CONTROL_PICO
+            for control in data[CONF_CONTROLS]
+            if control[CONF_TYPE] == ControlType.PICO
             and set(control[CONF_SHADES]) == entity_ids
         ),
         None,

@@ -22,47 +22,14 @@
         },
         "data_description": {
           "name": "For example, “Living Room Aligned”.",
-          "shades": "The side-by-side shades to keep level. Each must support setting a position and stopping."
+          "shades": "The side-by-side shades to keep level. Lists shades, blinds and shutters that can be set to a position; if one is missing, set its “Show as” to Shade in its entity settings."
         }
       },
-      "shade": {
-        "title": "{name} (shade {index} of {count})",
-        "description": "Where is this shade's bottom edge (hemline) when fully closed and when fully open? Measure every shade from the same point, such as inches from the floor.",
-        "data": {
-          "closed_height": "Hemline height when fully closed",
-          "open_height": "Hemline height when fully open"
-        }
-      },
-      "travel": {
-        "title": "Travel time",
-        "description": "How long does {name}, the tallest shade, take to go from fully closed to fully open? All shades in the group are assumed to move at the same speed.\n\nRoller shades also don't move evenly: the roll is fattest when open, so the hemline drops faster near the top. If your shades' hemlines don't line up partway, set {name} to 50% on its own and enter its hemline height. This assumes the shades' rolls match: same fabric and tube, with the same amount of fabric wound on whenever their hemlines are level.",
-        "data": {
-          "travel_time_s": "Full travel time",
-          "halfway_height": "Hemline height at 50% (optional)"
-        },
-        "data_description": {
-          "travel_time_s": "If you're unsure, round down rather than up.",
-          "halfway_height": "For {name}, between {low} and {high}. Leave empty if the shades line up partway already."
-        }
-      }
-    },
-    "error": {
-      "too_few_shades": "Choose at least two shades.",
-      "closed_not_below_open": "The closed height must be below the open height.",
-      "cover_unsupported": "Every shade must support setting a position and stopping.",
-      "ranges_do_not_overlap": "This shade's open-to-closed range doesn't overlap the other shades'. Every shade's range must share some height.",
-      "halfway_out_of_range": "That's outside the heights a roller shade can have at 50%; check the measurement and the open and closed heights.",
-      "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements.",
-      "pico_not_a_shade_pico": "That device doesn't have On, Stop and Off buttons. Choose a shade Pico with a middle button.",
-      "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default)."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
+      "reconfigure": {
         "title": "Edit {name}",
         "description": "Group side-by-side shades so their bottom edges stay level.",
         "data": {
+          "name": "Name",
           "shades": "Shades"
         },
         "sections": {
@@ -78,7 +45,8 @@
           }
         },
         "data_description": {
-          "shades": "The side-by-side shades to keep level. Each must support setting a position and stopping."
+          "name": "Renames the group's device and, unless you've renamed it, its entity.",
+          "shades": "The side-by-side shades to keep level. Lists shades, blinds and shutters that can be set to a position; if one is missing, set its “Show as” to Shade in its entity settings."
         }
       },
       "shade": {
@@ -111,6 +79,9 @@
       "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements.",
       "pico_not_a_shade_pico": "That device doesn't have On, Stop and Off buttons. Choose a shade Pico with a middle button.",
       "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default)."
+    },
+    "abort": {
+      "reconfigure_successful": "Saved. The group has been reloaded with its new settings."
     }
   }
 }

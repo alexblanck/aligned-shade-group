@@ -16,7 +16,7 @@ async def async_get_config_entry_diagnostics(
     group = getattr(entry, "runtime_data", None)
     return {
         "title": entry.title,
-        "options": dict(entry.options),
+        "data": dict(entry.data),
         "group": group.diagnostics() if group is not None else None,
     }
 

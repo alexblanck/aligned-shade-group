@@ -40,8 +40,10 @@ design relies on:
 
 ## Configuration (UI only)
 
-Created via a config flow, edited via an options flow. No YAML. The name is
-the config entry's title; everything else is stored in its options:
+Created and edited through one config flow: Add integration starts it at the
+`user` step, and Reconfigure (in the entry's menu) at the `reconfigure` step,
+which also renames the group. No YAML. The name is the config entry's title;
+everything else is stored in its data:
 
 ```json
 {

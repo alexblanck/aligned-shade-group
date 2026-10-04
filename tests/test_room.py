@@ -16,6 +16,8 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
 )
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
+from custom_components.aligned_shade_group.const import DOMAIN
+
 from .common import HIGH_SILL, LOW_SILL, SHADES, SPEED
 from .sim import FAVORITE, GROUP, STEP_S, ShadeSpec, build_room
 
@@ -215,13 +217,14 @@ async def test_different_tops_and_sills(
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
-async def test_options_change_applies_to_running_group(
+async def test_reconfigure_applies_to_running_group(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     room = await build_room(hass, freezer, same_tops(100))
 
-    # Remove the Pico through the options flow; the group reloads without it.
-    flow = await hass.config_entries.options.async_init(room.entry.entry_id)
+    # Rename the group and remove its Pico; the group reloads with both.
+    flow = await room.start_reconfigure()
+    assert flow["step_id"] == "reconfigure"
     assert flow["description_placeholders"]["name"] == "Living Room"
     # The Pico section opens expanded, since this group has one.
     pico_section = flow["data_schema"].schema["pico"]
@@ -229,15 +232,17 @@ async def test_options_change_applies_to_running_group(
     # ...and suggests the Pico its stored buttons belong to.
     (device_field,) = pico_section.schema.schema
     assert device_field.description == {"suggested_value": room.pico_device_id()}
-    flow = await hass.config_entries.options.async_configure(
-        flow["flow_id"], {"shades": [HIGH_SILL, LOW_SILL], "pico": {}}
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {"name": "Den", "shades": [HIGH_SILL, LOW_SILL], "pico": {}},
     )
-    flow = await room.answer_shade_steps(
-        flow, hass.config_entries.options.async_configure
-    )
-    assert flow["type"] == "create_entry", flow
-    assert room.entry.options["controls"] == []
+    flow = await room.answer_shade_steps(flow)
+    assert flow["type"] == "abort", flow
+    assert flow["reason"] == "reconfigure_successful"
     await hass.async_block_till_done()
+    assert room.entry.title == "Den"
+    assert room.entry.data["controls"] == []
+    assert room.group.attributes["friendly_name"] == "Den"
 
     await room.command("close_cover")
     await room.run_until_still()
@@ -246,18 +251,29 @@ async def test_options_change_applies_to_running_group(
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
+async def test_shade_picker_offers_only_shades(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    await build_room(hass, freezer, same_tops(0))
+
+    # Starting a second group: its picker leaves out the first group, and
+    # covers that aren't shades (such as garage doors).
+    flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    config = flow["data_schema"].schema["shades"].config
+    assert config["exclude_entities"] == [GROUP]
+    (shade_filter,) = config["filter"]
+    assert shade_filter["device_class"] == ["shade", "blind", "shutter"]
+
+
 async def test_pico_paired_to_some_shades_is_not_used_yet(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     room = await build_room(hass, freezer, same_tops(100))
     # Stored like a Pico paired to only one of the shades.
-    (pico,) = room.entry.options["controls"]
+    (pico,) = room.entry.data["controls"]
     hass.config_entries.async_update_entry(
         room.entry,
-        options={
-            **room.entry.options,
-            "controls": [{**pico, "shades": [LOW_SILL]}],
-        },
+        data={**room.entry.data, "controls": [{**pico, "shades": [LOW_SILL]}]},
     )
     await hass.config_entries.async_reload(room.entry.entry_id)
     await hass.async_block_till_done()
@@ -494,20 +510,19 @@ async def test_failed_command(
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
 
 
-async def test_options_change_mid_run(
+async def test_reconfigure_mid_run(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     room = await build_room(hass, freezer, same_tops(0))
 
     await room.command("open_cover")
     await room.run(3)  # high-sill shade's start still pending
-    flow = await hass.config_entries.options.async_init(room.entry.entry_id)
-    flow = await hass.config_entries.options.async_configure(
-        flow["flow_id"], {"shades": [HIGH_SILL, LOW_SILL], "pico": {}}
+    flow = await room.start_reconfigure()
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {"name": "Living Room", "shades": [HIGH_SILL, LOW_SILL], "pico": {}},
     )
-    flow = await room.answer_shade_steps(
-        flow, hass.config_entries.options.async_configure
-    )
+    flow = await room.answer_shade_steps(flow)
     await hass.async_block_till_done()
     await room.run(20)
 
@@ -604,7 +619,7 @@ async def test_diagnostics_mid_run(
 
     assert diagnostics["title"] == "Living Room"
     # The Pico is chosen by device, and stored as the buttons found on it.
-    assert diagnostics["options"]["controls"] == [
+    assert diagnostics["data"]["controls"] == [
         {
             "type": "pico",
             "shades": [HIGH_SILL, LOW_SILL],

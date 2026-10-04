@@ -11,7 +11,7 @@ How to work on Aligned Shade Group. For how alignment and motion work, see
 | `custom_components/aligned_shade_group/alignment.py` | Pure math: building a group from its settings, alignment, motion plans. No Home Assistant imports |
 | `custom_components/aligned_shade_group/cover.py` | The group entity: runs plans as service calls and timers, estimates positions while a plan runs |
 | `custom_components/aligned_shade_group/pico.py` | Finding a Pico's On/Stop/Off buttons from its device |
-| `custom_components/aligned_shade_group/config_flow.py` | Create/edit screens (config and options flows) |
+| `custom_components/aligned_shade_group/config_flow.py` | The setup screens: one config flow that creates a group (`user` step) or edits one (`reconfigure` step) |
 | `custom_components/aligned_shade_group/diagnostics.py` | "Download diagnostics": settings plus the group's live state |
 | `custom_components/aligned_shade_group/translations/en.json` | UI text for those screens |
 | `tests/sim.py` | Simulated shades and Pico used by the scenario tests |
@@ -106,15 +106,20 @@ helpers), which would hide timing bugs.
 - A plan is a set of moves, one per shade; running a plan carries out its
   moves. Use "run" for the group's motion as a whole and "move" for a shade's
   part in it.
+- `CONF_*` constants (in `const.py`) are keys in a group's stored settings;
+  setup form fields that aren't stored as they are get `FIELD_*` constants in
+  `config_flow.py`.
 - Home Assistant's `async_` prefix means a coroutine or a `@callback`
   function, never a plain undecorated function.
 - Debug logs should name the group (`self.entity_id`) so multiple groups can be
   told apart.
 
 Adding a setting touches several files: a key in `const.py`, the schema and
-validation in `config_flow.py` (both the create and edit flows), its label in
-`translations/en.json`, and reading it in `cover.py`. Settings are stored in
-the config entry's `options`.
+validation in `config_flow.py` (creating and editing share the same steps),
+its label in `translations/en.json`, and reading it in `cover.py`. Settings
+are stored in the config entry's `data`. There's no options flow: Home
+Assistant's options are for optional tweaks, while every setting here defines
+the group, so editing is a reconfigure flow.
 
 ## Trying it on real hardware
 
