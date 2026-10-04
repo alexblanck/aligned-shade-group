@@ -459,7 +459,7 @@ class AlignedShadeGroup(CoverEntity):
                 COVER_DOMAIN, SERVICE_STOP_COVER, self._entity_ids
             )
             _LOGGER.debug(
-                "%s: stopped each shade (%s) in %.3fs",
+                "%s: stopped each shade (%s; %.3fs)",
                 self.entity_id,
                 "no usable Pico"
                 if not pico
@@ -480,30 +480,21 @@ class AlignedShadeGroup(CoverEntity):
                 ", ".join(missing),
             )
         self._abandon_plan()
+        pico = self._async_usable_pico()
         plan = self._group.plan_moves(
             positions_pct_by_id,
             target_pct=target_pct,
-            pico_available=self._async_usable_pico() is not None,
+            pico_available=pico is not None,
             moving_entity_ids=moving_entity_ids,
         )
         direction = self._group_direction(positions_pct_by_id, target_pct)
-        _LOGGER.debug(
-            "%s: planned %s%% (hemline height %.1f) from %s positions %s -> "
-            "Pico %s%s, moves %s, %.1fs",
-            self.entity_id,
-            target_pct,
-            self._group.height_for_position(target_pct),
-            positions_source,
-            positions_pct_by_id,
-            plan.pico,
-            f" ({plan.pico_blocker})" if plan.pico_blocker else "",
-            [
-                f"{m.shade.entity_id}->{m.target_pct}%@{m.delay_s:.1f}s"
-                + ("" if m.needs_command else " (Pico)")
-                for m in plan.moves
-            ],
-            plan.duration_s(),
-        )
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "%s",
+                self._describe_plan(
+                    plan, target_pct, positions_pct_by_id, positions_source, pico
+                ),
+            )
         if plan.moves:
             await self._async_run_plan(plan, direction)
         else:
@@ -528,6 +519,53 @@ class AlignedShadeGroup(CoverEntity):
             )
             for entity_id, position_pct in self._positions_pct_by_id.items()
         }
+
+    def _describe_plan(
+        self,
+        plan: Plan,
+        target_pct: int,
+        positions_pct_by_id: dict[str, int],
+        positions_source: str,
+        pico: PicoButtons | None,
+    ) -> str:
+        """A plan as readable lines: the Pico, then each shade's move."""
+        if plan.pico is not None and pico is not None:
+            pico_line = f"presses {pico.toward(plan.pico)}"
+        elif self._pico is None:
+            pico_line = "none set up"
+        elif pico is None:
+            pico_line = "not used (its buttons are missing or unavailable)"
+        elif plan.pico_blocker:
+            pico_line = f"not used ({plan.pico_blocker})"
+        else:
+            pico_line = "not needed"
+        lines = [
+            f"{self.entity_id}: plan to {target_pct}% "
+            f"(hemline {self._group.height_for_position(target_pct):.1f}), "
+            f"{plan.duration_s():.1f}s, from {positions_source} positions",
+            f"  Pico: {pico_line}",
+        ]
+        moving = set()
+        for move in plan.moves:
+            moving.add(move.shade.entity_id)
+            if plan.pico is None:
+                start = f"at {move.delay_s:.1f}s"
+            elif move.needs_command:
+                start = "with the Pico, then is sent its target"
+            else:
+                start = "with the Pico"
+            if move.from_pct == move.target_pct:
+                lines.append(f"  {move.shade.entity_id}: holds at {move.target_pct}%")
+                continue
+            lines.append(
+                f"  {move.shade.entity_id}: {move.from_pct}% "
+                f"(hemline {move.from_height():.1f}) -> {move.target_pct}%, "
+                f"starts {start}, arrives at {move.arrival_s():.1f}s"
+            )
+        for entity_id, position_pct in positions_pct_by_id.items():
+            if entity_id not in moving:
+                lines.append(f"  {entity_id}: stays at {position_pct}%")
+        return "\n".join(lines)
 
     @callback
     def _planning_positions(self) -> dict[str, int]:
@@ -612,7 +650,7 @@ class AlignedShadeGroup(CoverEntity):
     ) -> None:
         move = running_move.move
         _LOGGER.debug(
-            "%s: starting %s -> %s%% (timer %+.3fs from schedule)",
+            "%s: delayed start for %s -> %s%% (timer %+.3fs from schedule)",
             self.entity_id,
             move.shade.entity_id,
             move.target_pct,
@@ -666,19 +704,18 @@ class AlignedShadeGroup(CoverEntity):
             )
         )
         _LOGGER.debug(
-            "%s: set positions in %.3fs: %s",
+            "%s: sent %s",
             self.entity_id,
-            max(took_s),
-            {
-                move.shade.entity_id: f"{move.target_pct}% in {seconds:.3f}s"
+            ", ".join(
+                f"{move.shade.entity_id} -> {move.target_pct}% ({seconds:.3f}s)"
                 for move, seconds in zip(moves, took_s, strict=True)
-            },
+            ),
         )
 
     async def _async_press(self, button_entity_id: str) -> None:
         took_s = await self._async_call(BUTTON_DOMAIN, SERVICE_PRESS, button_entity_id)
         _LOGGER.debug(
-            "%s: pressed Pico %s in %.3fs", self.entity_id, button_entity_id, took_s
+            "%s: pressed %s (%.3fs)", self.entity_id, button_entity_id, took_s
         )
 
     async def _async_call(
