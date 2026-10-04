@@ -72,7 +72,7 @@
               "halfway_height": "Hemline height at 50%"
             },
             "data_description": {
-              "halfway_height": "Between {low} and {high}. Leave empty only if 50% puts {name}'s hemline exactly halfway between closed and open."
+              "halfway_height": "Between {low} and {high}. Leave empty if your hemlines move at a constant speed."
             }
           }
         }
