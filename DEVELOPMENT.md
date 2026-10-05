@@ -33,7 +33,9 @@ No Python 3.14 installed? [uv](https://docs.astral.sh/uv/) can fetch one:
 `uv venv --python 3.14 .venv`, then `uv pip install -r requirements_test.txt ruff mypy`.
 
 `requirements_test.txt` pulls in `pytest-homeassistant-custom-component`, which
-installs Home Assistant itself. mypy needs that installed in the same venv to
+installs Home Assistant itself. It's deliberately unpinned, so CI always tests
+against the latest Home Assistant and flags breakages early; upgrade your
+local copy (`pip install -U -r requirements_test.txt`) to reproduce them. mypy needs that installed in the same venv to
 see Home Assistant's type hints. Ruff and mypy are deliberately not in the
 requirements yet.
 

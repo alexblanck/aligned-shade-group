@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-import voluptuous as vol
+import probatio as vol
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.cover import CoverEntity, CoverEntityFeature
