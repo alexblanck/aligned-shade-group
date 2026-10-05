@@ -47,6 +47,10 @@ ruff check custom_components tests && ruff format custom_components tests
 mypy --strict custom_components/aligned_shade_group
 ```
 
+GitHub Actions runs the same checks on every push to `main` and every pull
+request ([.github/workflows/checks.yml](.github/workflows/checks.yml)), with
+formatting checked rather than applied (`ruff format --check`).
+
 Handy pytest variations:
 
 ```bash
