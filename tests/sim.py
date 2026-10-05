@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -561,12 +561,15 @@ async def build_room(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     specs: list[ShadeSpec],
-    pico: bool = True,
+    pico: bool | Collection[str] = True,
     configured_travel_time_s: float | None = None,
     *,
     start_pct: float | Mapping[str, float] | None = None,
 ) -> Room:
     """Set up simulated shades (and Pico), then the group via its config flow.
+
+    `pico` is True for a Pico paired to every shade, or the entity ids of the
+    shades it's paired to.
 
     `start_pct` is where the shades start, in percent (0 closed, 100 open):
 
@@ -595,8 +598,9 @@ async def build_room(
     assert await async_setup_component(hass, "cover", {"cover": {"platform": "test"}})
     buttons = None
     if pico:
+        paired = [shade for shade in shades if pico is True or shade.entity_id in pico]
         buttons = {
-            role: SimPicoButton(role, shades, bridge)
+            role: SimPicoButton(role, paired, bridge)
             for role in ("open", "stop", "close")
         }
         await _async_add_pico(hass, list(buttons.values()))

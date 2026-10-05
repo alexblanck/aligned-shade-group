@@ -252,7 +252,7 @@ async def test_renamed_pico_button_falls_back_to_each_shade(
     assert all(0 < pct < 100 for pct in room.positions_pct_by_id().values())
     assert not any(shade.moving for shade in room.shades.values())
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
-    assert "not using its Pico" in caplog.text
+    assert "not using button.pico_stop" in caplog.text
     issue = missing_entities_issue(hass, room)
     assert issue is not None
     assert issue.translation_placeholders["entities"] == "- button.pico_stop"
@@ -293,11 +293,12 @@ async def test_renames_raise_and_clear_the_issue_without_a_move(
     assert missing_entities_issue(hass, room) is None
 
 
-async def test_pico_paired_to_some_shades_is_not_used_yet(
+async def test_pico_paired_to_some_shades_starts_and_stops_them(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(), start_pct=100)
-    # Stored like a Pico paired to only one of the shades.
+    # A Pico paired to only the low-sill shade: it starts that shade, and the
+    # other is commanded at the same moment; likewise for stopping.
+    room = await build_room(hass, freezer, same_tops(), [LOW_SILL], start_pct=100)
     (pico,) = room.entry.data["controls"]
     hass.config_entries.async_update_entry(
         room.entry,
@@ -307,10 +308,15 @@ async def test_pico_paired_to_some_shades_is_not_used_yet(
     await hass.async_block_till_done()
 
     await room.command("close_cover")
+    await room.run(10)
+    # Stopping: the Pico stops its shade, and the other gets its own stop.
+    await room.command("stop_cover")
     await room.run_until_still()
 
-    assert room.pico["close"].presses == 0
-    assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
+    assert room.pico["close"].presses == 1
+    assert room.pico["stop"].presses == 1
+    assert room[HIGH_SILL].starts[0][0] == room[LOW_SILL].starts[0][0]
+    assert all(0 < pct < 100 for pct in room.positions_pct_by_id().values())
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
@@ -630,11 +636,14 @@ async def test_diagnostics_mid_run(
     ]
     group = diagnostics["group"]
     # The Pico's buttons, found from its device.
-    assert group["pico"] == {
-        "open": "button.pico_open",
-        "stop": "button.pico_stop",
-        "close": "button.pico_close",
-    }
+    assert group["controls"] == [
+        {
+            "shades": [HIGH_SILL, LOW_SILL],
+            "open": "button.pico_open",
+            "stop": "button.pico_stop",
+            "close": "button.pico_close",
+        }
+    ]
     assert group["state"] == "opening"
     assert group["moving"] is True
     shades = {shade["entity_id"]: shade for shade in group["shades"]}

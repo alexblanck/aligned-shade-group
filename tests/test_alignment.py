@@ -8,6 +8,7 @@ import pytest
 from custom_components.aligned_shade_group.alignment import (
     Move,
     ShadeConfig,
+    Starter,
     matched_roll_group,
 )
 from custom_components.aligned_shade_group.roll_profile import RollProfile
@@ -54,18 +55,34 @@ def test_group_position_falls_back_to_average_hemline() -> None:
     assert GROUP.current_position(positions_pct_by_id(50, 50)) == 54
 
 
-def test_pico_skipped_when_a_shade_it_would_move_should_stay() -> None:
+def pico(*, open_pct: int) -> Starter:
+    """A Pico button paired to both shades."""
+    return Starter(
+        name=f"button.pico_{open_pct}",
+        targets={HIGH_SILL.entity_id: open_pct, LOW_SILL.entity_id: open_pct},
+    )
+
+
+def test_starter_skipped_when_a_shade_it_would_move_should_stay() -> None:
     # Aligned within tolerance (hemlines 48.6 and 48.0); going to 51% moves the
     # low-sill shade (50 -> 51) but not the high-sill one (41.2 -> 41), so a
     # Pico press would wrongly move it.
-    plan = GROUP.plan_moves(positions_pct_by_id(41, 50), 51, pico_available=True)
-    assert plan.pico is None
-    assert plan.pico_blocker == "it would move a shade that is already in place"
+    plan = GROUP.plan_moves(positions_pct_by_id(41, 50), 51, [pico(open_pct=100)])
+    assert plan.starts == ()
+    assert plan.unused == (
+        (
+            "button.pico_100",
+            "it would move a shade that isn't starting with this group",
+        ),
+    )
 
 
-def test_pico_skipped_when_a_position_is_unknown() -> None:
-    plan = GROUP.plan_moves({LOW_SILL.entity_id: 100}, 0, pico_available=True)
-    assert plan.pico is None
+def test_starter_skipped_when_a_position_is_unknown() -> None:
+    plan = GROUP.plan_moves({LOW_SILL.entity_id: 100}, 0, [pico(open_pct=0)])
+    assert plan.starts == ()
+    assert plan.unused == (
+        ("button.pico_0", "some of its shades' positions are unknown"),
+    )
     assert plan.moves == (Move(shade=LOW_SILL, from_pct=100, target_pct=0),)
 
 

@@ -56,6 +56,8 @@ from .alignment import (
     Move,
     Plan,
     ShadeConfig,
+    Start,
+    Starter,
     matched_roll_group,
 )
 from .const import (
@@ -81,14 +83,14 @@ class _RunningMove:
 
     move: Move
     start: datetime
-    # The Pico's endpoint when a Pico press starts the shade.
-    pico_endpoint_pct: int | None = None
+    # Where its starter (a Pico or scene) sends it, if one starts it.
+    starter_pct: int | None = None
 
     def expected_reports(self) -> set[int]:
         """Positions the shade may report while carrying out this move."""
         expected = {self.move.from_pct, self.move.target_pct}
-        if self.pico_endpoint_pct is not None:
-            expected.add(self.pico_endpoint_pct)
+        if self.starter_pct is not None:
+            expected.add(self.starter_pct)
         return expected
 
     def estimate_position(self, now: datetime) -> int:
@@ -100,6 +102,25 @@ class _RunningMove:
         return round(max(move.target_pct, move.from_pct - moved_pct))
 
 
+@dataclass(frozen=True)
+class _Pico:
+    """A Pico paired to some (or all) of the group's shades."""
+
+    buttons: PicoButtons
+    shades: tuple[str, ...]
+
+    def entities(self) -> tuple[str, ...]:
+        """Entities it needs, to check they're there."""
+        return self.buttons.buttons()
+
+    def starters(self) -> list[Starter]:
+        """Its On button sends its shades to 100%, its Off button to 0%."""
+        return [
+            Starter(name=self.buttons.open, targets=dict.fromkeys(self.shades, 100)),
+            Starter(name=self.buttons.close, targets=dict.fromkeys(self.shades, 0)),
+        ]
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -108,22 +129,19 @@ async def async_setup_entry(
     """Set up the aligned shade group entity."""
     data = entry.data
     group = matched_roll_group(ShadeConfig(**shade) for shade in data[CONF_SHADES])
-    # Only a Pico paired to every shade is used so far.
-    entity_ids = {shade.entity_id for shade in group.shades}
-    pico = next(
-        (
-            PicoButtons(
+    controls = [
+        _Pico(
+            buttons=PicoButtons(
                 open=control[CONF_PICO_OPEN],
                 stop=control[CONF_PICO_STOP],
                 close=control[CONF_PICO_CLOSE],
-            )
-            for control in data[CONF_CONTROLS]
-            if control[CONF_TYPE] == ControlType.PICO
-            and set(control[CONF_SHADES]) == entity_ids
-        ),
-        None,
-    )
-    entity = AlignedShadeGroup(entry=entry, group=group, pico=pico)
+            ),
+            shades=tuple(control[CONF_SHADES]),
+        )
+        for control in data[CONF_CONTROLS]
+        if control[CONF_TYPE] == ControlType.PICO
+    ]
+    entity = AlignedShadeGroup(entry=entry, group=group, controls=controls)
     entry.runtime_data = entity  # for diagnostics
     async_add_entities([entity])
 
@@ -148,7 +166,7 @@ class AlignedShadeGroup(CoverEntity):
         self,
         entry: ConfigEntry,
         group: AlignmentGroup,
-        pico: PicoButtons | None,
+        controls: list[_Pico],
     ) -> None:
         """Initialize the group."""
         self._attr_unique_id = entry.entry_id
@@ -161,7 +179,7 @@ class AlignedShadeGroup(CoverEntity):
         )
         self._group = group
         self._entry = entry
-        self._pico = pico
+        self._controls = controls
         self._entity_ids = [shade.entity_id for shade in group.shades]
         self._positions_pct_by_id: dict[str, int] = {}
         # Set while a plan is (believed to be) running. Tracked from the plan
@@ -169,6 +187,8 @@ class AlignedShadeGroup(CoverEntity):
         self._moving = False
         self._direction: Direction | None = None
         self._timers: list[CALLBACK_TYPE] = []
+        # When the running plan started; its delays count from here.
+        self._started = dt_util.utcnow()
         # Moves of the running plan, keyed by entity id.
         self._running_moves: dict[str, _RunningMove] = {}
         # Bumped whenever a plan is abandoned, so a failing command can tell
@@ -198,7 +218,7 @@ class AlignedShadeGroup(CoverEntity):
     @callback
     def _concerns_this_group(self, data: er.EventEntityRegistryUpdatedData) -> bool:
         # Both ids, so renaming one back to its original id counts too.
-        watched = {*self._entity_ids, *(self._pico.buttons() if self._pico else ())}
+        watched = {*self._entity_ids, *self._control_entities()}
         return data["entity_id"] in watched or data.get("old_entity_id") in watched
 
     @callback
@@ -290,7 +310,10 @@ class AlignedShadeGroup(CoverEntity):
             "state": self.state,
             "current_position": self.current_cover_position,
             "aligned": self.extra_state_attributes["aligned"],
-            "pico": asdict(self._pico) if self._pico else None,
+            "controls": [
+                {"shades": list(control.shades), **asdict(control.buttons)}
+                for control in self._controls
+            ],
             "roll_profile": asdict(self._group.view.profile),
             "group_profile_range_pct": [
                 self._group.view.closed_pct,
@@ -374,12 +397,11 @@ class AlignedShadeGroup(CoverEntity):
 
     @callback
     def _async_update_missing_issue(self) -> list[str]:
-        """Raise or clear the repair issue for missing shades and Pico buttons.
+        """Raise or clear the repair issue for missing shades and controls.
 
         Fixing them means reconfiguring the group. Returns them.
         """
-        pico_buttons = self._pico.buttons() if self._pico else ()
-        missing = self._missing([*self._entity_ids, *pico_buttons])
+        missing = self._missing([*self._entity_ids, *self._control_entities()])
         issue_id = missing_entities_issue_id(self._entry.entry_id)
         if not missing:
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
@@ -399,38 +421,42 @@ class AlignedShadeGroup(CoverEntity):
         )
         return missing
 
+    def _control_entities(self) -> list[str]:
+        return [entity for control in self._controls for entity in control.entities()]
+
     @callback
-    def _async_usable_pico(self) -> PicoButtons | None:
-        """The Pico, if its buttons can be pressed right now.
+    def _async_usable_controls(self) -> list[_Pico]:
+        """Controls whose entities can be used right now.
 
         Pressing a button that doesn't exist does nothing and raises nothing,
         so without this check the group would wait for shades that never
-        started. Without a usable Pico, shades are commanded one by one.
+        started. Shades without a usable control are commanded one by one.
         """
-        if self._pico is None:
-            return None
-        if missing := self._missing(self._pico.buttons()):
-            _LOGGER.warning(
-                "%s: not using its Pico, whose buttons are missing or disabled "
-                "(%s); reconfigure the group to choose the Pico again",
-                self.entity_id,
-                ", ".join(missing),
-            )
-            return None
-        unavailable = [
-            button
-            for button in self._pico.buttons()
-            if (state := self.hass.states.get(button)) is None
-            or state.state == STATE_UNAVAILABLE
-        ]
-        if unavailable:
-            _LOGGER.warning(
-                "%s: not using its Pico, whose buttons are unavailable (%s)",
-                self.entity_id,
-                ", ".join(unavailable),
-            )
-            return None
-        return self._pico
+        usable = []
+        for control in self._controls:
+            if missing := self._missing(control.entities()):
+                _LOGGER.warning(
+                    "%s: not using %s, which is missing or disabled; "
+                    "reconfigure the group to choose it again",
+                    self.entity_id,
+                    ", ".join(missing),
+                )
+                continue
+            unavailable = [
+                entity_id
+                for entity_id in control.entities()
+                if (state := self.hass.states.get(entity_id)) is None
+                or state.state == STATE_UNAVAILABLE
+            ]
+            if unavailable:
+                _LOGGER.warning(
+                    "%s: not using %s, which is unavailable",
+                    self.entity_id,
+                    ", ".join(unavailable),
+                )
+                continue
+            usable.append(control)
+        return usable
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open every shade."""
@@ -445,25 +471,28 @@ class AlignedShadeGroup(CoverEntity):
         await self._async_set_group_position(kwargs[ATTR_POSITION])
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        """Stop every shade at once."""
-        was_moving = self._moving
+        """Stop every shade: with Picos where it's safe, else one by one."""
+        running = set(self._running_moves) if self._moving else set()
         self._abandon_plan()
         self.async_write_ha_state()
-        # A shade Pico's middle button goes to the favorite position when the
-        # shades are stationary, so only press it while we think they're moving.
-        pico = self._async_usable_pico()
-        if pico and was_moving:
-            await self._async_press(pico.stop)
-        else:
-            took_s = await self._async_call(
-                COVER_DOMAIN, SERVICE_STOP_COVER, self._entity_ids
-            )
+        # Every shade gets a stop, since others may be moving that the plan
+        # doesn't know about. A shade Pico's middle button stops its shades
+        # while any of them is moving, but sends them to their favorite
+        # position when all are still, so only Picos covering shades of a
+        # running plan are pressed; every other shade gets its own stop.
+        picos = [
+            control
+            for control in self._async_usable_controls()
+            if isinstance(control, _Pico) and running & set(control.shades)
+        ]
+        await asyncio.gather(*(self._async_press(pico.buttons.stop) for pico in picos))
+        covered = {shade for pico in picos for shade in pico.shades}
+        if rest := [e for e in self._entity_ids if e not in covered]:
+            took_s = await self._async_call(COVER_DOMAIN, SERVICE_STOP_COVER, rest)
             _LOGGER.debug(
-                "%s: stopped each shade (%s; %.3fs)",
+                "%s: stopped %s one by one (%.3fs)",
                 self.entity_id,
-                "no usable Pico"
-                if not pico
-                else "not moving, Pico would go to favorite",
+                ", ".join(rest),
                 took_s,
             )
 
@@ -480,17 +509,20 @@ class AlignedShadeGroup(CoverEntity):
                 ", ".join(missing),
             )
         self._abandon_plan()
-        pico = self._async_usable_pico()
         plan = self._group.plan_moves(
             positions_pct_by_id,
             target_pct=target_pct,
-            pico_available=pico is not None,
+            starters=[
+                starter
+                for control in self._async_usable_controls()
+                for starter in control.starters()
+            ],
             moving_entity_ids=moving_entity_ids,
         )
         direction = self._group_direction(positions_pct_by_id, target_pct)
         if _LOGGER.isEnabledFor(logging.DEBUG):
             for line in self._describe_plan(
-                plan, target_pct, positions_pct_by_id, positions_source, pico
+                plan, target_pct, positions_pct_by_id, positions_source
             ):
                 _LOGGER.debug("%s: %s", self.entity_id, line)
         if plan.moves:
@@ -524,43 +556,40 @@ class AlignedShadeGroup(CoverEntity):
         target_pct: int,
         positions_pct_by_id: dict[str, int],
         positions_source: str,
-        pico: PicoButtons | None,
     ) -> list[str]:
-        """A plan as log lines: a summary, the Pico, then each shade's move.
+        """A plan as log lines: a summary, what starts shades, then each move.
 
         Logged one line each, so every line can be found by grepping for the
         group or a shade.
         """
-        if plan.pico is not None and pico is not None:
-            pico_line = f"presses {pico.toward(plan.pico)}"
-        elif self._pico is None:
-            pico_line = "none set up"
-        elif pico is None:
-            pico_line = "not used (its buttons are missing or unavailable)"
-        elif plan.pico_blocker:
-            pico_line = f"not used ({plan.pico_blocker})"
-        else:
-            pico_line = "not needed"
         lines = [
             f"plan to {target_pct}% "
             f"(hemline {self._group.height_for_position(target_pct):.1f}), "
             f"{plan.duration_s():.1f}s, from {positions_source} positions",
-            f"plan: Pico {pico_line}",
         ]
+        if not self._controls:
+            lines.append("plan: no Picos or scenes set up")
+        lines.extend(
+            f"plan: starts {start.starter.name} at {start.delay_s:.1f}s"
+            for start in plan.starts
+        )
+        lines.extend(
+            f"plan: not using {name} ({reason})" for name, reason in plan.unused
+        )
         moving = set()
         for move in plan.moves:
             moving.add(move.shade.entity_id)
-            if plan.pico is None:
-                start = f"at {move.delay_s:.1f}s"
-            elif move.needs_command:
-                start = "with the Pico, then is sent its target"
-            else:
-                start = "with the Pico"
             if move.from_pct == move.target_pct:
                 lines.append(
                     f"plan: {move.shade.entity_id} holds at {move.target_pct}%"
                 )
                 continue
+            if move.started_by is None:
+                start = f"at {move.delay_s:.1f}s"
+            else:
+                start = f"with {move.started_by} at {move.delay_s:.1f}s"
+                if move.needs_command:
+                    start += ", then is sent its target"
             lines.append(
                 f"plan: {move.shade.entity_id} {move.from_pct}% "
                 f"(hemline {move.from_height():.1f}) -> {move.target_pct}%, "
@@ -603,27 +632,36 @@ class AlignedShadeGroup(CoverEntity):
     async def _async_run_plan(self, plan: Plan, direction: Direction | None) -> None:
         self._moving = True
         self._direction = direction
-        started = dt_util.utcnow()
-        pico_endpoint_pct = None
-        if plan.pico is not None:
-            pico_endpoint_pct = 100 if plan.pico is Direction.OPENING else 0
+        self._started = started = dt_util.utcnow()
+        starter_pcts = {
+            entity_id: target_pct
+            for start in plan.starts
+            for entity_id, target_pct in start.starter.targets.items()
+        }
         self._running_moves = {
             move.shade.entity_id: _RunningMove(
                 move=move,
                 start=started + timedelta(seconds=move.delay_s),
-                pico_endpoint_pct=pico_endpoint_pct,
+                starter_pct=(
+                    starter_pcts.get(move.shade.entity_id) if move.started_by else None
+                ),
             )
             for move in plan.moves
         }
-        # Timers are set before sending any command, so slow commands below
-        # don't delay them.
-        for running_move in self._running_moves.values():
-            if running_move.move.needs_command and running_move.move.delay_s > 0:
+        # Everything starting at the same moment goes out together: starters
+        # first, then the commands. Timers are set before sending anything, so
+        # slow commands now don't delay later starts.
+        delays = sorted(
+            {start.delay_s for start in plan.starts}
+            | {move.delay_s for move in plan.moves if move.needs_command}
+        )
+        for delay_s in delays:
+            if delay_s > 0:
                 self._timers.append(
                     async_call_later(
                         self.hass,
-                        running_move.move.delay_s,
-                        partial(self._async_delayed_start, running_move),
+                        delay_s,
+                        partial(self._async_delayed_start, plan, delay_s),
                     )
                 )
         self._timers.append(
@@ -633,11 +671,7 @@ class AlignedShadeGroup(CoverEntity):
 
         generation = self._generation
         try:
-            if plan.pico is not None and self._pico:
-                await self._async_press(self._pico.toward(plan.pico))
-            await self._async_set_positions(
-                move for move in plan.moves if move.needs_command and move.delay_s <= 0
-            )
+            await self._async_start(plan, 0.0)
         except HomeAssistantError as err:
             if generation == self._generation:
                 _LOGGER.debug(
@@ -649,23 +683,34 @@ class AlignedShadeGroup(CoverEntity):
                 self.async_write_ha_state()
             raise
 
+    async def _async_start(self, plan: Plan, delay_s: float) -> None:
+        """Fire the starters and send the commands due `delay_s` into the plan."""
+        starts = [start for start in plan.starts if start.delay_s == delay_s]
+        await asyncio.gather(*(self._async_fire(start) for start in starts))
+        await self._async_set_positions(
+            move
+            for move in plan.moves
+            if move.needs_command and move.delay_s == delay_s
+        )
+
     async def _async_delayed_start(
-        self, running_move: _RunningMove, _now: datetime
+        self, plan: Plan, delay_s: float, _now: datetime
     ) -> None:
-        move = running_move.move
+        late_s = (dt_util.utcnow() - self._started).total_seconds()
         _LOGGER.debug(
-            "%s: delayed start for %s -> %s%% (timer %+.3fs from schedule)",
+            "%s: delayed start at %.1fs (timer %+.3fs from schedule)",
             self.entity_id,
-            move.shade.entity_id,
-            move.target_pct,
-            (dt_util.utcnow() - running_move.start).total_seconds(),
+            delay_s,
+            late_s - delay_s,
         )
         try:
-            await self._async_set_positions([move])
+            await self._async_start(plan, delay_s)
         except HomeAssistantError as err:
-            _LOGGER.error(
-                "%s: couldn't start %s: %s", self.entity_id, move.shade.entity_id, err
-            )
+            _LOGGER.error("%s: couldn't start shades: %s", self.entity_id, err)
+
+    async def _async_fire(self, start: Start) -> None:
+        """Press a Pico button or activate a scene."""
+        await self._async_press(start.starter.name)
 
     @callback
     def _async_plan_done(self, _now: datetime) -> None:

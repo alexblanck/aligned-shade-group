@@ -15,7 +15,7 @@ Naming:
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, KeysView, Mapping
+from collections.abc import Collection, Iterable, KeysView, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
@@ -137,17 +137,31 @@ def matched_roll_group(shades: Iterable[ShadeConfig]) -> AlignmentGroup:
 
 
 @dataclass(frozen=True)
+class Starter:
+    """A way to start several shades at once: a Pico button or a scene.
+
+    `name` is its entity (the button or scene), and `targets` is where it sends
+    each of its shades. It's one command to the bridge, so they start together.
+    """
+
+    name: str
+    targets: Mapping[str, int]
+
+
+@dataclass(frozen=True)
 class Move:
     """One shade's part of a plan: where it goes and when it starts.
 
-    `needs_command` is False when a Pico press already sends the shade to its
-    target, so no `set_position` command is needed.
+    `started_by` names the starter that starts the shade, if any. The shade
+    still needs its own `set_position` (`needs_command`) unless the starter
+    already sends it to its target.
     """
 
     shade: Shade
     from_pct: int
     target_pct: int
     delay_s: float = 0.0
+    started_by: str | None = None
     needs_command: bool = True
 
     def direction(self) -> Direction:
@@ -167,22 +181,28 @@ class Move:
 
 
 @dataclass(frozen=True)
+class Start:
+    """A starter to fire, `delay_s` after the plan starts."""
+
+    starter: Starter
+    delay_s: float
+
+
+@dataclass(frozen=True)
 class Plan:
     """The moves that bring the group to a target hemline height.
 
     Running a plan carries out its moves. `moves` has one entry per shade that
     moves, sorted by start delay, plus "hold" moves (start equals target) for
-    shades still heading to an earlier target. If `pico` is set, press that
-    Pico button first: it starts every paired shade at once toward the
-    endpoint, and only moves that stop short of it need a command. Pico plans
-    never need holds: a held shade partway would have blocked the Pico, and one
-    at the endpoint is carried there anyway. `pico_blocker` says why an
-    available Pico wasn't used.
+    shades still heading to an earlier target. `starts` are the starters to
+    fire, each when its shades' turn comes: at that moment, fire the starter
+    first, then send the commands for moves that need one. `unused` says why
+    each available starter wasn't used.
     """
 
-    pico: Direction | None
     moves: tuple[Move, ...]
-    pico_blocker: str | None = None
+    starts: tuple[Start, ...] = ()
+    unused: tuple[tuple[str, str], ...] = ()
 
     def duration_s(self) -> float:
         """Seconds until every shade has arrived."""
@@ -269,11 +289,14 @@ class AlignmentGroup:
         self,
         positions_pct_by_id: Mapping[str, int],
         target_pct: int,
-        pico_available: bool,
+        starters: Sequence[Starter] = (),
         moving_entity_ids: Collection[str] = (),
     ) -> Plan:
         """Plan the moves that bring the group to `target_pct`.
 
+        Shades moving the same way start in level groups (see `_level_groups`),
+        each when the leader reaches it. A group starts with the starters that
+        fit it (see `_starter_fit`), and its other shades with commands.
         `moving_entity_ids` are shades that may still be heading somewhere
         else; any already at their new target get a move that holds them there.
         """
@@ -290,62 +313,55 @@ class AlignmentGroup:
                 moves.append(move)
             elif shade.entity_id in moving_entity_ids:
                 holds.append(move)
-        if not moves:
-            return Plan(pico=None, moves=tuple(holds))
-        directions = {move.direction() for move in moves}
-        direction = directions.pop() if len(directions) == 1 else None
 
-        blocker = None
-        if pico_available:
-            if direction is None:
-                blocker = "shades are moving in different directions"
-            else:
-                blocker = self._pico_blocker(positions_pct_by_id, direction, len(moves))
-                if blocker is None:
-                    return _pico_plan(direction, moves)
-
-        staggered = [
-            staggered_move
-            for direction_ in Direction
-            for staggered_move in _staggered(
-                [move for move in moves if move.direction() is direction_],
+        timed = [
+            timed_group
+            for direction in Direction
+            for timed_group in _timed_groups(
+                [move for move in moves if move.direction() is direction],
                 self._height_tolerance,
             )
         ]
-        staggered.sort(key=lambda move: move.delay_s)
-        return Plan(pico=None, moves=(*holds, *staggered), pico_blocker=blocker)
-
-    def _pico_blocker(
-        self,
-        positions_pct_by_id: Mapping[str, int],
-        direction: Direction,
-        moving_count: int,
-    ) -> str | None:
-        """Why a Pico press can't be used, or None if it's safe.
-
-        The Pico moves every paired shade that isn't already at the endpoint,
-        so all of those must need to move and share a hemline height (and all
-        positions must be known).
-        """
-        if len(self._shades_for(positions_pct_by_id.keys())) != len(self.shades):
-            return "some shade positions are unknown"
-        endpoint_pct = 100 if direction is Direction.OPENING else 0
-        heights = [
-            shade.height_for_position(positions_pct_by_id[shade.entity_id])
-            for shade in self.shades
-            if positions_pct_by_id[shade.entity_id] != endpoint_pct
-        ]
-        if len(heights) != moving_count:
-            return "it would move a shade that is already in place"
-        shared_height = sum(heights) / len(heights)
-        if any(
-            abs(height - shared_height) > self._height_tolerance for height in heights
-        ):
-            return (
-                f"shades start from different hemline heights "
-                f"({min(heights):.1f} to {max(heights):.1f})"
-            )
-        return None
+        planned: list[Move] = []
+        starts: list[Start] = []
+        used: set[str] = set()
+        reasons: dict[str, str] = {}
+        for group, delay_s in timed:
+            fits: list[tuple[Starter, set[str]]] = []
+            for starter in starters:
+                fit = _starter_fit(starter, group, positions_pct_by_id)
+                if isinstance(fit, str):
+                    reasons.setdefault(starter.name, fit)
+                else:
+                    fits.append((starter, fit))
+            # Starters covering more of the group first; each shade is started
+            # by at most one of them.
+            started_by: dict[str, Starter] = {}
+            for starter, covered in sorted(fits, key=lambda fit: -len(fit[1])):
+                if covered & started_by.keys():
+                    reasons.setdefault(starter.name, "another one covers its shades")
+                    continue
+                started_by |= dict.fromkeys(covered, starter)
+                starts.append(Start(starter=starter, delay_s=delay_s))
+                used.add(starter.name)
+            for move in group:
+                by = started_by.get(move.shade.entity_id)
+                planned.append(
+                    replace(
+                        move,
+                        delay_s=delay_s,
+                        started_by=by.name if by else None,
+                        needs_command=by is None
+                        or by.targets[move.shade.entity_id] != move.target_pct,
+                    )
+                )
+        planned.sort(key=lambda move: move.delay_s)
+        unused = tuple(
+            (starter.name, reasons.get(starter.name, "none of its shades move"))
+            for starter in starters
+            if starter.name not in used
+        )
+        return Plan(moves=(*holds, *planned), starts=tuple(starts), unused=unused)
 
     def _shades_for(self, entity_ids: KeysView[str]) -> list[Shade]:
         """The group's shades with these entity ids, in group order."""
@@ -376,12 +392,13 @@ def _level_groups(moves: list[Move], tolerance_height: float) -> list[list[Move]
     return groups
 
 
-def _staggered(moves: list[Move], tolerance_height: float) -> list[Move]:
-    """Delay moves in one direction so each starts when the leader reaches it.
+def _timed_groups(
+    moves: list[Move], tolerance_height: float
+) -> list[tuple[list[Move], float]]:
+    """Level groups of moves in one direction, each with its start delay.
 
-    The leader is the shade furthest from the target. Each group of shades
-    starting level (see `_level_groups`) starts together, when the leader
-    reaches the group's first shade.
+    Each group (see `_level_groups`) starts when the leader, the shade
+    furthest from the target, reaches the group's first shade.
     """
     groups = _level_groups(moves, tolerance_height)
     if not groups:
@@ -389,7 +406,7 @@ def _staggered(moves: list[Move], tolerance_height: float) -> list[Move]:
     leader = groups[0][0]
     # The leader's group starts at once: converting the leader's hemline back
     # to a position can leave a tiny nonzero delay.
-    staggered = [replace(move, delay_s=0.0) for move in groups[0]]
+    timed = [(groups[0], 0.0)]
     for group in groups[1:]:
         # How long the leader takes to move from where it starts to this
         # group's hemline: positions change at a constant rate.
@@ -401,17 +418,33 @@ def _staggered(moves: list[Move], tolerance_height: float) -> list[Move]:
             / 100
             * leader.shade.travel_time_s
         )
-        staggered.extend(replace(move, delay_s=delay_s) for move in group)
-    return staggered
+        timed.append((group, delay_s))
+    return timed
 
 
-def _pico_plan(direction: Direction, moves: list[Move]) -> Plan:
-    """The Pico starts every move; only those stopping short need a command."""
-    endpoint_pct = 100 if direction is Direction.OPENING else 0
-    return Plan(
-        pico=direction,
-        moves=tuple(
-            replace(move, needs_command=move.target_pct != endpoint_pct)
-            for move in moves
-        ),
-    )
+def _starter_fit(
+    starter: Starter, group: list[Move], positions_pct_by_id: Mapping[str, int]
+) -> set[str] | str:
+    """The group's shades a starter would start, or why it can't be used.
+
+    A starter moves every one of its shades that isn't already at its target,
+    all at once, so each of those must be in this group (moving now, from this
+    level) and be sent the way its move goes. A shade that should end up
+    elsewhere gets a follow-up command.
+    """
+    moves_by_id = {move.shade.entity_id: move for move in group}
+    covered = set()
+    for entity_id, starter_pct in starter.targets.items():
+        if entity_id not in positions_pct_by_id:
+            return "some of its shades' positions are unknown"
+        from_pct = positions_pct_by_id[entity_id]
+        if starter_pct == from_pct:
+            continue  # already there, so the starter leaves it alone
+        if (move := moves_by_id.get(entity_id)) is None:
+            return "it would move a shade that isn't starting with this group"
+        if (starter_pct > from_pct) != (move.direction() is Direction.OPENING):
+            return "it would move a shade the wrong way"
+        covered.add(entity_id)
+    if not covered:
+        return "none of its shades move"
+    return covered
