@@ -123,6 +123,8 @@ async def test_pico_buttons_must_be_enabled(hass: HomeAssistant) -> None:
         hass, flow, device_id=add_pico(hass, shade_pico, disabled=("Stop",))
     )
     assert result["errors"] == {"base": "pico_buttons_disabled"}
+    # Shown again with the Pico still chosen, so its section stays open.
+    assert result["data_schema"].schema["pico"].options["collapsed"] is False
 
 
 async def test_shade_pico_is_accepted(hass: HomeAssistant) -> None:

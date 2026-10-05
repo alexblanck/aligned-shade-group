@@ -235,12 +235,14 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 return await self.async_step_shade()
 
-        has_pico = bool(prefill.get(FIELD_PICO))
+        # Open the Pico section if it has a Pico, including after an error.
+        values = user_input or prefill
+        has_pico = bool(values.get(FIELD_PICO, {}).get(FIELD_PICO_DEVICE))
         return self.async_show_form(
             step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(
                 _choose_shades_schema(self.hass, pico_collapsed=not has_pico),
-                user_input or prefill,
+                values,
             ),
             errors=errors,
             description_placeholders={"name": prefill.get(FIELD_NAME, "")},
