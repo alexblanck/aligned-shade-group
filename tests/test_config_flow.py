@@ -182,6 +182,25 @@ async def test_picos_and_scenes_are_stored_with_their_shades(
     ]
 
 
+async def test_picos_and_scenes_can_only_be_added_once(hass: HomeAssistant) -> None:
+    result = await reach_controls(hass)
+    pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
+    result = await add_pico_answers(hass, result, pico, [LOW_SILL])
+    result = await add_pico_answers(hass, result, pico, [HIGH_SILL])
+    assert result["errors"] == {"base": "control_already_added"}
+
+    result = await reach_controls(hass)
+    scene = {"scene": "scene.open_both", "shades": [HIGH_SILL], "position": 100}
+    configure = hass.config_entries.flow.async_configure
+    result = await configure(
+        (await choose(hass, result, "add_scene"))["flow_id"], scene
+    )
+    result = await configure(
+        (await choose(hass, result, "add_scene"))["flow_id"], scene
+    )
+    assert result["errors"] == {"base": "control_already_added"}
+
+
 async def test_controls_need_shades_and_a_scene(hass: HomeAssistant) -> None:
     result = await reach_controls(hass)
     result = await choose(hass, result, "add_scene")

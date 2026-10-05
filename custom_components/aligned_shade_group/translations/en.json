@@ -103,7 +103,8 @@
       "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default).",
       "no_control_shades": "Choose at least one shade.",
       "control_shades_not_in_group": "Choose only shades in this group.",
-      "not_a_scene": "Choose a scene."
+      "not_a_scene": "Choose a scene.",
+      "control_already_added": "That one's already added."
     },
     "abort": {
       "reconfigure_successful": "Saved. The group has been reloaded with its new settings."

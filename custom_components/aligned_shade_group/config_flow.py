@@ -425,7 +425,12 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             except PicoButtonsError as err:
                 errors["base"] = err.reason
             else:
-                if error := self._check_control_shades(shades):
+                if any(
+                    control.get(CONF_PICO_STOP) == buttons.stop
+                    for control in self._controls
+                ):
+                    errors["base"] = "control_already_added"
+                elif error := self._check_control_shades(shades):
                     errors["base"] = error
                 else:
                     self._controls.append(
@@ -457,6 +462,11 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             shades = user_input[FIELD_SHADES]
             if split_entity_id(user_input[FIELD_SCENE])[0] != Platform.SCENE:
                 errors["base"] = "not_a_scene"
+            elif any(
+                control.get(CONF_ENTITY_ID) == user_input[FIELD_SCENE]
+                for control in self._controls
+            ):
+                errors["base"] = "control_already_added"
             elif error := self._check_control_shades(shades):
                 errors["base"] = error
             else:

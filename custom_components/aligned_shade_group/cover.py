@@ -534,7 +534,10 @@ class AlignedShadeGroup(CoverEntity):
             for control in self._async_usable_controls()
             if isinstance(control, _Pico) and travelling & set(control.shades)
         ]
-        await asyncio.gather(*(self._async_press(pico.buttons.stop) for pico in picos))
+        # Each button once: a second press would find the shades still and
+        # send them to favorite.
+        stop_buttons = dict.fromkeys(pico.buttons.stop for pico in picos)
+        await asyncio.gather(*(self._async_press(button) for button in stop_buttons))
         covered = {shade for pico in picos for shade in pico.shades}
         if rest := [e for e in self._entity_ids if e not in covered]:
             took_s = await self._async_call(COVER_DOMAIN, SERVICE_STOP_COVER, rest)

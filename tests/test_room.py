@@ -374,6 +374,30 @@ async def test_stop_before_a_picos_shades_start(
     assert not any(shade.moving for shade in room.shades.values())
 
 
+async def test_pico_listed_twice_is_pressed_once(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # Stored twice (the setup form rejects that, but stored data could still
+    # have it). Pressing its Stop twice would stop the shades and then, with
+    # them still, send them to their favorite position.
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
+    (pico,) = room.entry.data["controls"]
+    hass.config_entries.async_update_entry(
+        room.entry, data={**room.entry.data, "controls": [pico, pico]}
+    )
+    await hass.config_entries.async_reload(room.entry.entry_id)
+    await hass.async_block_till_done()
+
+    await room.command("close_cover")
+    await room.run(10)
+    await room.command("stop_cover")
+    await room.run(20)
+
+    assert room.pico["close"].presses == 1
+    assert room.pico["stop"].presses == 1
+    assert room.positions_pct_by_id() == {HIGH_SILL: 67, LOW_SILL: 72}
+
+
 async def test_unavailable_shade(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
