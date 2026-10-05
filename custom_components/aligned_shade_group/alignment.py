@@ -152,16 +152,16 @@ class Starter:
 class Move:
     """One shade's part of a plan: where it goes and when it starts.
 
-    `started_by` names the starter that starts the shade, if any. The shade
-    still needs its own `set_position` (`needs_command`) unless the starter
-    already sends it to its target.
+    `starter` is the starter that starts the shade, or None when its own
+    `set_position` does. A shade a starter starts still needs its own command
+    (`needs_command`) unless the starter already sends it to its target.
     """
 
     shade: Shade
     from_pct: int
     target_pct: int
     delay_s: float = 0.0
-    started_by: str | None = None
+    starter: Starter | None = None
     needs_command: bool = True
 
     def direction(self) -> Direction:
@@ -181,27 +181,22 @@ class Move:
 
 
 @dataclass(frozen=True)
-class Start:
-    """A starter to fire, `delay_s` after the plan starts."""
-
-    starter: Starter
-    delay_s: float
-
-
-@dataclass(frozen=True)
 class Plan:
     """The moves that bring the group to a target hemline height.
 
     Running a plan carries out its moves. `moves` has one entry per shade that
     moves, sorted by start delay, plus "hold" moves (start equals target) for
-    shades still heading to an earlier target. `starts` are the starters to
-    fire, each when its shades' turn comes: at that moment, fire the starter
-    first, then send the commands for moves that need one. `unused` says why
-    each available starter wasn't used.
+    shades still heading to an earlier target. At each start delay, fire the
+    starters of that moment's moves, each once, then send the commands for
+    moves that need one. `unused` says why each available starter wasn't used.
+
+    A plan is its moves, not its starts (each listing the moves it begins):
+    most questions are about one shade (where is it heading, where is it now,
+    is this report expected), and grouping by starter is only needed when
+    sending commands.
     """
 
     moves: tuple[Move, ...]
-    starts: tuple[Start, ...] = ()
     unused: tuple[tuple[str, str], ...] = ()
 
     def duration_s(self) -> float:
@@ -323,7 +318,6 @@ class AlignmentGroup:
             )
         ]
         planned: list[Move] = []
-        starts: list[Start] = []
         used: set[str] = set()
         reasons: dict[str, str] = {}
         for group, delay_s in timed:
@@ -336,21 +330,20 @@ class AlignmentGroup:
                     fits.append((starter, fit))
             # Starters covering more of the group first; each shade is started
             # by at most one of them.
-            started_by: dict[str, Starter] = {}
+            starter_of: dict[str, Starter] = {}
             for starter, covered in sorted(fits, key=lambda fit: -len(fit[1])):
-                if covered & started_by.keys():
+                if covered & starter_of.keys():
                     reasons.setdefault(starter.name, "another one covers its shades")
                     continue
-                started_by |= dict.fromkeys(covered, starter)
-                starts.append(Start(starter=starter, delay_s=delay_s))
+                starter_of |= dict.fromkeys(covered, starter)
                 used.add(starter.name)
             for move in group:
-                by = started_by.get(move.shade.entity_id)
+                by = starter_of.get(move.shade.entity_id)
                 planned.append(
                     replace(
                         move,
                         delay_s=delay_s,
-                        started_by=by.name if by else None,
+                        starter=by,
                         needs_command=by is None
                         or by.targets[move.shade.entity_id] != move.target_pct,
                     )
@@ -361,7 +354,7 @@ class AlignmentGroup:
             for starter in starters
             if starter.name not in used
         )
-        return Plan(moves=(*holds, *planned), starts=tuple(starts), unused=unused)
+        return Plan(moves=(*holds, *planned), unused=unused)
 
     def _shades_for(self, entity_ids: KeysView[str]) -> list[Shade]:
         """The group's shades with these entity ids, in group order."""

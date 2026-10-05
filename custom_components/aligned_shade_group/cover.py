@@ -60,7 +60,6 @@ from .alignment import (
     Move,
     Plan,
     ShadeConfig,
-    Start,
     Starter,
     matched_roll_group,
 )
@@ -606,8 +605,10 @@ class AlignedShadeGroup(CoverEntity):
         if not self._controls:
             lines.append("plan: no Picos or scenes set up")
         lines.extend(
-            f"plan: starts {start.starter.name} at {start.delay_s:.1f}s"
-            for start in plan.starts
+            f"plan: starts {name} at {delay_s:.1f}s"
+            for name, delay_s in dict.fromkeys(
+                (move.starter.name, move.delay_s) for move in plan.moves if move.starter
+            )
         )
         lines.extend(
             f"plan: not using {name} ({reason})" for name, reason in plan.unused
@@ -620,10 +621,10 @@ class AlignedShadeGroup(CoverEntity):
                     f"plan: {move.shade.entity_id} holds at {move.target_pct}%"
                 )
                 continue
-            if move.started_by is None:
+            if move.starter is None:
                 start = f"at {move.delay_s:.1f}s"
             else:
-                start = f"with {move.started_by} at {move.delay_s:.1f}s"
+                start = f"with {move.starter.name} at {move.delay_s:.1f}s"
                 if move.needs_command:
                     start += ", then is sent its target"
             lines.append(
@@ -669,17 +670,12 @@ class AlignedShadeGroup(CoverEntity):
         self._moving = True
         self._direction = direction
         self._started = started = dt_util.utcnow()
-        starter_pcts = {
-            entity_id: target_pct
-            for start in plan.starts
-            for entity_id, target_pct in start.starter.targets.items()
-        }
         self._running_moves = {
             move.shade.entity_id: _RunningMove(
                 move=move,
                 start=started + timedelta(seconds=move.delay_s),
                 starter_pct=(
-                    starter_pcts.get(move.shade.entity_id) if move.started_by else None
+                    move.starter.targets[move.shade.entity_id] if move.starter else None
                 ),
             )
             for move in plan.moves
@@ -688,8 +684,7 @@ class AlignedShadeGroup(CoverEntity):
         # first, then the commands. Timers are set before sending anything, so
         # slow commands now don't delay later starts.
         delays = sorted(
-            {start.delay_s for start in plan.starts}
-            | {move.delay_s for move in plan.moves if move.needs_command}
+            {move.delay_s for move in plan.moves if move.starter or move.needs_command}
         )
         for delay_s in delays:
             if delay_s > 0:
@@ -721,13 +716,11 @@ class AlignedShadeGroup(CoverEntity):
 
     async def _async_start(self, plan: Plan, delay_s: float) -> None:
         """Fire the starters and send the commands due `delay_s` into the plan."""
-        starts = [start for start in plan.starts if start.delay_s == delay_s]
-        await asyncio.gather(*(self._async_fire(start) for start in starts))
-        await self._async_set_positions(
-            move
-            for move in plan.moves
-            if move.needs_command and move.delay_s == delay_s
-        )
+        due = [move for move in plan.moves if move.delay_s == delay_s]
+        # Each starter once, though it starts several moves.
+        starters = {move.starter.name: move.starter for move in due if move.starter}
+        await asyncio.gather(*(self._async_fire(s) for s in starters.values()))
+        await self._async_set_positions(move for move in due if move.needs_command)
 
     async def _async_delayed_start(
         self, plan: Plan, delay_s: float, _now: datetime
@@ -744,9 +737,9 @@ class AlignedShadeGroup(CoverEntity):
         except HomeAssistantError as err:
             _LOGGER.error("%s: couldn't start shades: %s", self.entity_id, err)
 
-    async def _async_fire(self, start: Start) -> None:
+    async def _async_fire(self, starter: Starter) -> None:
         """Press a Pico button or activate a scene."""
-        name = start.starter.name
+        name = starter.name
         if split_entity_id(name)[0] == SCENE_DOMAIN:
             took_s = await self._async_call(SCENE_DOMAIN, SERVICE_TURN_ON, name)
             _LOGGER.debug("%s: activated %s (%.3fs)", self.entity_id, name, took_s)

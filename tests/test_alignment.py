@@ -68,7 +68,7 @@ def test_starter_skipped_when_a_shade_it_would_move_should_stay() -> None:
     # low-sill shade (50 -> 51) but not the high-sill one (41.2 -> 41), so a
     # Pico press would wrongly move it.
     plan = GROUP.plan_moves(positions_pct_by_id(41, 50), 51, [pico(open_pct=100)])
-    assert plan.starts == ()
+    assert all(move.starter is None for move in plan.moves)
     assert plan.unused == (
         (
             "button.pico_100",
@@ -79,7 +79,7 @@ def test_starter_skipped_when_a_shade_it_would_move_should_stay() -> None:
 
 def test_starter_skipped_when_a_position_is_unknown() -> None:
     plan = GROUP.plan_moves({LOW_SILL.entity_id: 100}, 0, [pico(open_pct=0)])
-    assert plan.starts == ()
+    assert all(move.starter is None for move in plan.moves)
     assert plan.unused == (
         ("button.pico_0", "some of its shades' positions are unknown"),
     )
