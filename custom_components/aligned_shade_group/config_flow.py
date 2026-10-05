@@ -586,6 +586,8 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         """Choose a Pico or scene to change, then change it in its own form."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            if FIELD_CONTROL not in user_input:
+                return await self.async_step_controls()  # nothing chosen
             index = int(user_input[FIELD_CONTROL])
             control = self._controls[index]
             if control[CONF_TYPE] != ControlType.SCENE:
@@ -601,7 +603,7 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="change_control",
             data_schema=vol.Schema(
-                {vol.Required(FIELD_CONTROL): self._controls_selector(multiple=False)}
+                {vol.Optional(FIELD_CONTROL): self._controls_selector(multiple=False)}
             ),
             errors=errors,
         )
@@ -611,7 +613,8 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Choose Picos and scenes to remove."""
         if user_input is not None:
-            removed = {int(index) for index in user_input[FIELD_CONTROLS]}
+            # Nothing ticked sends no value: nothing to remove.
+            removed = {int(index) for index in user_input.get(FIELD_CONTROLS, [])}
             self._controls = [
                 control
                 for index, control in enumerate(self._controls)

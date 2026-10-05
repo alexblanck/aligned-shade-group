@@ -341,6 +341,22 @@ async def test_leaving_the_pico_or_scene_empty_goes_back(
         assert result["description_placeholders"]["controls"] == ""
 
 
+async def test_removing_or_changing_nothing_goes_back(hass: HomeAssistant) -> None:
+    result = await reach_controls(hass)
+    pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
+    result = await add_pico_answers(hass, result, pico, [LOW_SILL])
+    result = await choose(hass, result, "remove_controls")
+    # Nothing ticked: the form sends no value at all.
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["step_id"] in CONTROLS_MENUS
+    assert "Living Room Pico" in result["description_placeholders"]["controls"]
+
+    # Likewise choosing nothing to change.
+    result = await choose(hass, result, "change_control")
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["step_id"] in CONTROLS_MENUS
+
+
 async def test_controls_need_shades_and_a_scene(hass: HomeAssistant) -> None:
     result = await reach_controls(hass)
     result = await choose(hass, result, "add_scene")
