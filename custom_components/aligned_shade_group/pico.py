@@ -8,8 +8,6 @@ from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .alignment import Direction
-
 # Caseta names a Pico's button entities after the Pico, ending in the button's
 # name (such as "Living Room Pico On"). A shade Pico's Raise and Lower buttons
 # nudge shades, so they aren't used.
@@ -30,10 +28,6 @@ class PicoButtons:
     def buttons(self) -> tuple[str, str, str]:
         """All three button entities."""
         return (self.open, self.stop, self.close)
-
-    def toward(self, direction: Direction) -> str:
-        """The button that sends every shade toward that direction's end."""
-        return self.open if direction is Direction.OPENING else self.close
 
 
 class PicoButtonsError(Exception):

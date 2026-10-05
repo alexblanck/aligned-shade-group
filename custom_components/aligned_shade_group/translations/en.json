@@ -113,7 +113,7 @@
   "issues": {
     "entities_missing": {
       "title": "{name} can't find some of its devices",
-      "description": "These were renamed, removed or disabled:\n\n{entities}\n\nUntil this is fixed, {name} leaves out missing shades, and moves its shades one by one if its Pico's buttons are missing.\n\nTo fix this, open {name} under Settings → Devices & services → Aligned Shade Group, choose Reconfigure from its menu, and choose its shades and Pico again."
+      "description": "These were renamed, removed or disabled:\n\n{entities}\n\nUntil this is fixed, {name} leaves out missing shades, and starts and stops its shades without any Pico or scene that's missing.\n\nTo fix this, open {name} under Settings → Devices & services → Aligned Shade Group, choose Reconfigure from its menu, and choose its shades, Picos and scenes again."
     }
   }
 }

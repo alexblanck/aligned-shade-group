@@ -1,11 +1,13 @@
-"""A simulated room of Lutron shades and a Pico, driven through real HA services.
+"""A simulated room of Lutron shades, a Pico and scenes, driven through real HA
+services.
 
 Shades move over (frozen, manually advanced) time at their travel speed. Like
 Caseta shades, they report their destination as soon as they're commanded, and
 their real position only when stopped. The Pico behaves like a Caseta shade
-Pico paired on the bridge: Up/Down send every paired shade to open/closed at
+Pico paired on the bridge: On/Off send every paired shade to open/closed at
 the same instant, and the middle button stops moving shades but sends
-stationary shades to their favorite position.
+stationary shades to their favorite position. A Lutron scene sends its shades
+to its positions at the same instant.
 """
 
 from __future__ import annotations

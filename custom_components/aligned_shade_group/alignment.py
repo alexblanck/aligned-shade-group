@@ -322,13 +322,15 @@ class AlignmentGroup:
         ]
         planned: list[Move] = []
         used: set[str] = set()
-        reasons: dict[str, str] = {}
+        # Why each starter was turned down, per level group (the same reason
+        # once), so a starter rejected for different reasons logs them all.
+        reasons: dict[str, dict[str, None]] = {}
         for group, delay_s in timed:
             fits: list[tuple[Starter, set[str]]] = []
             for starter in starters:
                 fit = _starter_fit(starter, group, positions_pct_by_id, moving)
                 if isinstance(fit, str):
-                    reasons.setdefault(starter.name, fit)
+                    reasons.setdefault(starter.name, {})[fit] = None
                 else:
                     fits.append((starter, fit))
             # Starters covering more of the group first; each shade is started
@@ -336,7 +338,8 @@ class AlignmentGroup:
             starter_of: dict[str, Starter] = {}
             for starter, covered in sorted(fits, key=lambda fit: -len(fit[1])):
                 if covered & starter_of.keys():
-                    reasons.setdefault(starter.name, "another one covers its shades")
+                    reason = "another one covers its shades"
+                    reasons.setdefault(starter.name, {})[reason] = None
                     continue
                 starter_of |= dict.fromkeys(covered, starter)
                 used.add(starter.name)
@@ -353,7 +356,10 @@ class AlignmentGroup:
                 )
         planned.sort(key=lambda move: move.delay_s)
         unused = tuple(
-            (starter.name, reasons.get(starter.name, "none of its shades move"))
+            (
+                starter.name,
+                "; ".join(reasons.get(starter.name, {"none of its shades move": None})),
+            )
             for starter in starters
             if starter.name not in used
         )

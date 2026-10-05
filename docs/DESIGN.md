@@ -9,12 +9,13 @@ window shades of different sizes into a single `cover` entity whose bottom edges
 1. **Alignment** — shades of different heights/positions present an even
    hemline. The group's position stands for a shared hemline height, not a
    percentage passed to every shade.
-2. **Synchronized motion** — when a Lutron Pico is paired (on the Caseta bridge)
-   to exactly the shades in the group, the group uses Pico button presses so
-   every shade starts/stops at the same instant.
+2. **Synchronized motion** — Lutron Picos and scenes (on the Caseta bridge)
+   start several shades with one command, so the group uses them where they
+   cover shades that start level, and the Picos' Stop buttons to stop, so
+   those shades start and stop at the same instant.
 
-Pico support is optional; without one the group still aligns shades using
-per-shade commands.
+Picos and scenes are optional; without them the group still aligns shades
+using per-shade commands.
 
 Some shade systems do this natively: Lutron's [Intelligent Hembar
 Alignment](https://www.lutron.com/us/en/window-treatments/shades/roller-shades)
@@ -198,8 +199,8 @@ line was off by up to 4 3/8 in.
 Commands are open-loop. Caseta shades report their *destination* as soon as
 they're commanded (and their real position only when stopped), never
 opening/closing, so timing comes from the shared speed. Each command makes a
-*plan*: a *move* for each shade (target and start delay), plus an optional
-Pico press. Running the plan carries out its moves. While a plan runs, a new
+*plan*: a *move* for each shade (target, start delay, and the Pico button or
+scene that starts it, if any). Running the plan carries out its moves. While a plan runs, a new
 command plans from *estimated* positions (start position, start time, speed)
 rather than the reported ones, which already show the destinations.
 

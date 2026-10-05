@@ -140,10 +140,6 @@ class _Scene:
     entity_id: str
     positions: Mapping[str, int]
 
-    @property
-    def shades(self) -> tuple[str, ...]:
-        return tuple(self.positions)
-
     def entities(self) -> tuple[str, ...]:
         """Entities it needs, to check they're there."""
         return (self.entity_id,)
@@ -391,6 +387,11 @@ class AlignedShadeGroup(CoverEntity):
                     "from_pct": running_move.move.from_pct,
                     "target_pct": running_move.move.target_pct,
                     "delay_s": running_move.move.delay_s,
+                    "starter": (
+                        running_move.move.starter.name
+                        if running_move.move.starter
+                        else None
+                    ),
                     "needs_command": running_move.move.needs_command,
                     "start": running_move.start.isoformat(),
                     "estimated_pct": running_move.estimate_position(now),

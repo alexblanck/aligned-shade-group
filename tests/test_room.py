@@ -310,13 +310,6 @@ async def test_pico_paired_to_some_shades_starts_and_stops_them(
     # A Pico paired to only the low-sill shade: it starts that shade, and the
     # other is commanded at the same moment; likewise for stopping.
     room = await build_room(hass, freezer, same_tops(), [LOW_SILL], start_pct=100)
-    (pico,) = room.entry.data["controls"]
-    hass.config_entries.async_update_entry(
-        room.entry,
-        data={**room.entry.data, "controls": [{**pico, "shades": [LOW_SILL]}]},
-    )
-    await hass.config_entries.async_reload(room.entry.entry_id)
-    await hass.async_block_till_done()
 
     await room.command("close_cover")
     await room.run(10)
@@ -749,6 +742,8 @@ async def test_diagnostics_mid_run(
     moves = {move["entity_id"]: move for move in group["moves"]}
     assert moves[LOW_SILL]["estimated_pct"] == 8  # 6 in of 72 after 3 s
     assert moves[HIGH_SILL]["delay_s"] == pytest.approx(6)
+    # Started by their own commands: the shades don't start level for the Pico.
+    assert moves[HIGH_SILL]["starter"] is None
     assert moves[HIGH_SILL]["estimated_pct"] == 0
 
     # The device page offers the same download.
