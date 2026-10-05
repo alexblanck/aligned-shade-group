@@ -296,7 +296,7 @@ async def test_halfway_height_whose_curve_cannot_reach_every_shade(
 async def test_reconfigure_applies_to_running_group(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100))
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
 
     # Rename the group and remove its Pico; the group reloads with both.
     flow = await room.start_reconfigure()
@@ -332,7 +332,7 @@ async def test_reconfigure_applies_to_running_group(
 async def test_shade_picker_offers_only_shades(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    await build_room(hass, freezer, same_tops(0))
+    await build_room(hass, freezer, same_tops())
 
     # Starting a second group: its picker leaves out the first group, and
     # covers that aren't shades (such as garage doors).
@@ -346,7 +346,7 @@ async def test_shade_picker_offers_only_shades(
 async def test_reconfigure_fixes_renamed_pico_buttons(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100))
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
     assert room.entry is not None
     issue_id = missing_entities_issue_id(room.entry.entry_id)
     er.async_get(hass).async_update_entity(
@@ -374,7 +374,7 @@ async def test_reconfigure_fixes_renamed_pico_buttons(
 async def test_reconfigure_mid_run(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
+    room = await build_room(hass, freezer, same_tops())
 
     await room.command("open_cover")
     await room.run(3)  # high-sill shade's start still pending
@@ -395,7 +395,7 @@ async def test_reconfigure_mid_run(
 async def test_group_has_its_own_device(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
+    room = await build_room(hass, freezer, same_tops())
 
     entity = er.async_get(hass).async_get("cover.living_room")
     device = dr.async_get(hass).async_get(entity.device_id)
@@ -409,7 +409,7 @@ async def test_reconfigure_changes_only_what_was_edited(
 ) -> None:
     # Three shades with a curve and a Pico, then Reconfigure changing only the
     # name and accepting every other prefilled answer as it is.
-    room = await build_room(hass, freezer, matched_rolls(50), pico=True)
+    room = await build_room(hass, freezer, matched_rolls(), pico=True, start_pct=50)
     # Deep-copied in case a change ever edits the stored data in place.
     saved = copy.deepcopy(dict(room.entry.data))
 

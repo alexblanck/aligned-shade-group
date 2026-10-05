@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -118,7 +119,6 @@ class ShadeSpec:
     empty_height: float
     closed_turns: float
     open_turns: float
-    position_pct: float = 0
 
     @classmethod
     def even(
@@ -127,7 +127,6 @@ class ShadeSpec:
         closed_height: float,
         open_height: float,
         travel_time_s: float,
-        position_pct: float = 0,
     ) -> ShadeSpec:
         """A shade whose hemline moves evenly, taking `travel_time_s` to open."""
         tube_diameter = 1.5
@@ -142,20 +141,16 @@ class ShadeSpec:
             empty_height=closed_height,
             closed_turns=0,
             open_turns=turns,
-            position_pct=position_pct,
         )
 
     @classmethod
-    def from_config(
-        cls, config: dict[str, Any], speed: float, position_pct: float = 0
-    ) -> ShadeSpec:
+    def from_config(cls, config: dict[str, Any], speed: float) -> ShadeSpec:
         """An even shade matching a setup-flow config (as in `common.SHADES`)."""
         return cls.even(
             name=config["entity_id"].removeprefix("cover."),
             closed_height=config["closed_height"],
             open_height=config["open_height"],
             travel_time_s=(config["open_height"] - config["closed_height"]) / speed,
-            position_pct=position_pct,
         )
 
     def hemline_at_turns(self, turns: float) -> float:
@@ -194,14 +189,14 @@ class SimShade(CoverEntity):
         | CoverEntityFeature.SET_POSITION
     )
 
-    def __init__(self, spec: ShadeSpec, bridge: Bridge) -> None:
+    def __init__(self, spec: ShadeSpec, bridge: Bridge, start_pct: float) -> None:
         self.spec = spec
         self._bridge = bridge
         self.entity_id = spec.entity_id
         self._attr_name = spec.name
         self._attr_unique_id = spec.name
         # The motor's true position: fractional, unlike what HA reports.
-        self.position_pct = float(spec.position_pct)
+        self.position_pct = float(start_pct)
         self.target_pct = self.position_pct
         self._reported = round(self.position_pct)
         self._last = dt_util.utcnow()
@@ -471,11 +466,11 @@ class Room:
 HEIGHT_TOLERANCE = 1.0
 
 
-def same_tops(position_pct: int = 0) -> list[ShadeSpec]:
-    return [ShadeSpec.from_config(config, SPEED, position_pct) for config in SHADES]
+def same_tops() -> list[ShadeSpec]:
+    return [ShadeSpec.from_config(config, SPEED) for config in SHADES]
 
 
-def matched_rolls(position_pct: float) -> list[ShadeSpec]:
+def matched_rolls() -> list[ShadeSpec]:
     """Three shades whose rolls match at every hemline height.
 
     "high" has the longest range, so it's the one measured; "tall" reaches
@@ -495,7 +490,6 @@ def matched_rolls(position_pct: float) -> list[ShadeSpec]:
             empty_height=10,
             closed_turns=closed_turns,
             open_turns=open_turns,
-            position_pct=position_pct,
         )
         for name, closed_turns, open_turns in (
             ("tall", 4.416, 12.6488),
@@ -569,10 +563,34 @@ async def build_room(
     specs: list[ShadeSpec],
     pico: bool = True,
     configured_travel_time_s: float | None = None,
+    *,
+    start_pct: float | Mapping[str, float] | None = None,
 ) -> Room:
-    """Set up simulated shades (and Pico), then the group via its config flow."""
+    """Set up simulated shades (and Pico), then the group via its config flow.
+
+    `start_pct` is where the shades start, in percent (0 closed, 100 open):
+
+    - None (the default): every shade fully closed.
+    - A number: every shade at that position.
+    - A mapping of entity id to position, such as
+      `{"cover.left_1": 62, "cover.left_2": 75}`: each shade at its own. It
+      must name every shade, so a mistyped id fails rather than quietly
+      leaving that shade closed.
+    """
+    entity_ids = [spec.entity_id for spec in specs]
+    if start_pct is None:
+        start_pct = 0
+    if isinstance(start_pct, Mapping):
+        if set(start_pct) != set(entity_ids):
+            raise ValueError(
+                f"start_pct names {sorted(start_pct)}, not the room's shades "
+                f"{sorted(entity_ids)}"
+            )
+        start_pcts = dict(start_pct)
+    else:
+        start_pcts = dict.fromkeys(entity_ids, start_pct)
     bridge = Bridge(freezer=freezer)
-    shades = [SimShade(spec, bridge) for spec in specs]
+    shades = [SimShade(spec, bridge, start_pcts[spec.entity_id]) for spec in specs]
     setup_test_component_platform(hass, "cover", shades)
     assert await async_setup_component(hass, "cover", {"cover": {"platform": "test"}})
     buttons = None

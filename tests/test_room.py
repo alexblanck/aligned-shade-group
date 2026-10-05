@@ -43,7 +43,7 @@ async def test_open_from_closed_stays_aligned(
     freezer: FrozenDateTimeFactory,
     pico: bool,
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), pico)
+    room = await build_room(hass, freezer, same_tops(), pico)
     assert room.group.state == "closed"
 
     await room.command("open_cover")
@@ -66,7 +66,7 @@ async def test_open_from_closed_stays_aligned(
 async def test_close_from_open_uses_pico_in_lockstep(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100), True)
+    room = await build_room(hass, freezer, same_tops(), True, start_pct=100)
 
     await room.command("close_cover")
     await room.run_until_still()
@@ -81,7 +81,7 @@ async def test_close_from_open_uses_pico_in_lockstep(
 async def test_partial_close_then_reopen(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100), True)
+    room = await build_room(hass, freezer, same_tops(), True, start_pct=100)
 
     await room.command("set_cover_position", position=50)
     await room.run_until_still()
@@ -102,7 +102,7 @@ async def test_partial_close_then_reopen(
 async def test_stop_during_staggered_open(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), True)
+    room = await build_room(hass, freezer, same_tops(), True)
 
     await room.command("open_cover")
     await room.run(3)  # low-sill shade is moving; high-sill hasn't started
@@ -123,7 +123,7 @@ async def test_stop_during_staggered_open(
 async def test_stop_while_aligned_and_moving(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100), True)
+    room = await build_room(hass, freezer, same_tops(), True, start_pct=100)
 
     await room.command("close_cover")
     await room.run(10)
@@ -139,7 +139,7 @@ async def test_stop_while_aligned_and_moving(
 async def test_stop_while_idle_does_not_trigger_favorite(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100))
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
 
     await room.command("stop_cover")
     await room.run(30)
@@ -152,7 +152,7 @@ async def test_stop_while_idle_does_not_trigger_favorite(
 async def test_reverse_while_opening(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), True)
+    room = await build_room(hass, freezer, same_tops(), True)
 
     await room.command("open_cover")
     await room.run(15)  # both shades moving up
@@ -166,7 +166,7 @@ async def test_reverse_while_opening(
 async def test_retarget_while_moving(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100), True)
+    room = await build_room(hass, freezer, same_tops(), True, start_pct=100)
 
     await room.command("close_cover")
     await room.run(5)
@@ -193,14 +193,12 @@ async def test_different_tops_and_sills(
                 closed_height=10,
                 open_height=60,
                 travel_time_s=25,
-                position_pct=0,
             ),
             ShadeSpec.even(
                 name="right",
                 closed_height=20,
                 open_height=80,
                 travel_time_s=30,
-                position_pct=0,
             ),
         ],
         pico,
@@ -238,7 +236,7 @@ async def test_renamed_pico_button_falls_back_to_each_shade(
     # Pressing a button that no longer exists does nothing and raises
     # nothing, so the group must notice instead of waiting for shades that
     # never start.
-    room = await build_room(hass, freezer, same_tops(100))
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
     er.async_get(hass).async_update_entity(
         "button.pico_stop", new_entity_id="button.pico_stop_renamed"
     )
@@ -263,7 +261,7 @@ async def test_renamed_pico_button_falls_back_to_each_shade(
 async def test_renamed_shade_is_left_out_and_raised(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), pico=False)
+    room = await build_room(hass, freezer, same_tops(), pico=False)
     er.async_get(hass).async_update_entity(HIGH_SILL, new_entity_id="cover.renamed")
     await hass.async_block_till_done()
 
@@ -280,7 +278,7 @@ async def test_renamed_shade_is_left_out_and_raised(
 async def test_renames_raise_and_clear_the_issue_without_a_move(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
+    room = await build_room(hass, freezer, same_tops())
     registry = er.async_get(hass)
 
     registry.async_update_entity(LOW_SILL, new_entity_id="cover.renamed")
@@ -298,7 +296,7 @@ async def test_renames_raise_and_clear_the_issue_without_a_move(
 async def test_pico_paired_to_some_shades_is_not_used_yet(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100))
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
     # Stored like a Pico paired to only one of the shades.
     (pico,) = room.entry.data["controls"]
     hass.config_entries.async_update_entry(
@@ -321,7 +319,7 @@ async def test_unavailable_shade(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
+    room = await build_room(hass, freezer, same_tops())
     room[HIGH_SILL].set_available(False)
     await hass.async_block_till_done()
 
@@ -353,7 +351,7 @@ async def test_unavailable_shade(
 async def test_all_shades_unavailable(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
+    room = await build_room(hass, freezer, same_tops())
     for shade in room.shades.values():
         shade.set_available(False)
     await hass.async_block_till_done()
@@ -368,7 +366,7 @@ async def test_shades_moving_opposite_ways(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     # Out of line: hemlines at 54 and 48 (group at 54%).
-    room = await build_room(hass, freezer, same_tops(50), True)
+    room = await build_room(hass, freezer, same_tops(), True, start_pct=50)
     assert room.group.attributes["aligned"] is False
     assert room.group.attributes["current_position"] == 54
 
@@ -411,24 +409,27 @@ async def test_open_and_close_from_shuffled_positions(
             closed_height=24,
             open_height=84,
             travel_time_s=30,
-            position_pct=start_pcts[0],
         ),
         ShadeSpec.even(
             name="b",
             closed_height=12,
             open_height=84,
             travel_time_s=36,
-            position_pct=start_pcts[1],
         ),
         ShadeSpec.even(
             name="c",
             closed_height=30,
             open_height=72,
             travel_time_s=15,
-            position_pct=start_pcts[2],
         ),
     ]
-    room = await build_room(hass, freezer, specs, pico)
+    room = await build_room(
+        hass,
+        freezer,
+        specs,
+        pico,
+        start_pct=dict(zip(["cover.a", "cover.b", "cover.c"], start_pcts, strict=True)),
+    )
 
     await room.command(service)
     await room.run_until_still()
@@ -445,7 +446,7 @@ async def test_retarget_to_where_the_shades_are(
     freezer: FrozenDateTimeFactory,
     pico: bool,
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100), pico)
+    room = await build_room(hass, freezer, same_tops(), pico, start_pct=100)
 
     await room.command("close_cover")
     await room.run(10)  # hemlines at 64: low-sill shade at 72%
@@ -464,7 +465,7 @@ async def test_staggered_start_with_slow_commands(
     freezer: FrozenDateTimeFactory,
     pico: bool,
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), pico)
+    room = await build_room(hass, freezer, same_tops(), pico)
     room.bridge.latency_s = 1.0
 
     await room.command("open_cover")
@@ -485,7 +486,7 @@ async def test_retarget_while_a_staggered_start_is_pending(
     freezer: FrozenDateTimeFactory,
     pico: bool,
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), pico)
+    room = await build_room(hass, freezer, same_tops(), pico)
 
     await room.command("open_cover")
     await room.run(3)  # low-sill shade moving; high-sill shade not started yet
@@ -501,7 +502,7 @@ async def test_retarget_while_a_staggered_start_is_pending(
 async def test_new_command_while_the_first_commands_are_in_flight(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), pico=False)
+    room = await build_room(hass, freezer, same_tops(), pico=False)
     room.bridge.gate = asyncio.Event()
 
     # Opening: the low-sill shade's command is held up at the bridge.
@@ -524,7 +525,7 @@ async def test_new_command_while_the_first_commands_are_in_flight(
 async def test_failed_command(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0))
+    room = await build_room(hass, freezer, same_tops())
     room.bridge.fail = True
 
     with pytest.raises(HomeAssistantError):
@@ -545,7 +546,9 @@ async def test_motion_ends_at_the_planned_end(
 ) -> None:
     # Configured slower than the shades really are. They report their
     # destination immediately, so the group can't tell they arrived early.
-    room = await build_room(hass, freezer, same_tops(100), configured_travel_time_s=45)
+    room = await build_room(
+        hass, freezer, same_tops(), configured_travel_time_s=45, start_pct=100
+    )
 
     await room.command("close_cover")
     await room.run(40)  # shades closed at 36 s
@@ -565,7 +568,7 @@ async def test_outside_command_takes_over(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(0), pico=False)
+    room = await build_room(hass, freezer, same_tops(), pico=False)
 
     await room.command("open_cover")
     await room.run(3)  # high-sill shade's start still pending
@@ -588,7 +591,7 @@ async def test_outside_command_takes_over(
 async def test_physical_pico_stop_takes_over(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, same_tops(100))
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
 
     await room.command("close_cover")
     await room.run(10)
@@ -608,7 +611,7 @@ async def test_diagnostics_mid_run(
     hass_client: ClientSessionGenerator,
 ) -> None:
     assert await async_setup_component(hass, "diagnostics", {})
-    room = await build_room(hass, freezer, same_tops(0))
+    room = await build_room(hass, freezer, same_tops())
 
     await room.command("open_cover")
     await room.run(3)  # low-sill shade moving; high-sill shade not started yet
@@ -650,16 +653,17 @@ async def test_diagnostics_mid_run(
     )
 
 
-# The living room shades this was tuned on: identical Serena rollers hanging
-# from the same height, one with a raised bottom limit (about 49 3/4 in rather
-# than 17 7/8 in; both open at 125 1/8 in). The roll was sized from the taller
-# one measuring 67 1/8 in at 50%; it predicts every other measurement
-# (25/50/75% on both shades) to within 3/8 in.
+# The living room this was tuned on: five identical Serena rollers across one
+# wall, hanging from the same height and all opening at 125 1/8 in. Four close
+# at 17 7/8 in; left_1 has a raised bottom limit (about 49 3/4 in). The roll
+# was sized from left_2 measuring 67 1/8 in at 50%; it predicts every other
+# measurement (25/50/75% on both left shades) to within 3/8 in.
 LIVING_ROOM_ROLL = Roll(tube_diameter=1.625, fabric_thickness=0.02, turns_per_s=0.7)
 LIVING_ROOM_EMPTY_HEIGHT = 6.5
 
 
-def living_room(position_pct: float) -> list[ShadeSpec]:
+def living_room_left() -> list[ShadeSpec]:
+    """The two left shades ("Left Aligned"), one with a raised bottom limit."""
     return [
         ShadeSpec(
             name="left_1",
@@ -667,7 +671,6 @@ def living_room(position_pct: float) -> list[ShadeSpec]:
             empty_height=LIVING_ROOM_EMPTY_HEIGHT,
             closed_turns=7.7355,
             open_turns=18.8592,
-            position_pct=position_pct,
         ),
         ShadeSpec(
             name="left_2",
@@ -675,13 +678,12 @@ def living_room(position_pct: float) -> list[ShadeSpec]:
             empty_height=LIVING_ROOM_EMPTY_HEIGHT,
             closed_turns=2.1702,
             open_turns=18.8592,
-            position_pct=position_pct,
         ),
     ]
 
 
 async def test_roller_measurements_match_the_simulation() -> None:
-    left_1, left_2 = living_room(0)
+    left_1, left_2 = living_room_left()
     measured = {
         0: (49.75, 17.875),
         25: (67, 41.375),
@@ -702,7 +704,9 @@ async def test_roller_measurements_match_the_simulation() -> None:
 async def test_rollers_level_at_rest(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, target_pct: int
 ) -> None:
-    room = await build_room(hass, freezer, living_room(100), pico=False)
+    room = await build_room(
+        hass, freezer, living_room_left(), pico=False, start_pct=100
+    )
 
     await room.command("set_cover_position", position=target_pct)
     await room.run_until_still()
@@ -716,7 +720,7 @@ async def test_rollers_level_at_rest(
 async def test_rollers_stay_level_while_moving(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, pico: bool
 ) -> None:
-    room = await build_room(hass, freezer, living_room(0), pico)
+    room = await build_room(hass, freezer, living_room_left(), pico)
 
     await room.command("open_cover")
     await room.run_until_still()
@@ -729,15 +733,82 @@ async def test_rollers_stay_level_while_moving(
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
+def living_room_all() -> list[ShadeSpec]:
+    """The whole wall ("All Aligned"): the two left shades plus three right ones
+    the size of left_2, all on one five-shade Pico.
+    """
+    return [
+        *living_room_left(),
+        *(
+            ShadeSpec(
+                name=name,
+                roll=LIVING_ROOM_ROLL,
+                empty_height=LIVING_ROOM_EMPTY_HEIGHT,
+                closed_turns=2.1702,
+                open_turns=18.8592,
+            )
+            for name in ("right_3", "right_4", "right_5")
+        ),
+    ]
+
+
+async def test_living_room_all_stays_level(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, living_room_all())
+    tall = ["cover.left_2", "cover.right_3", "cover.right_4", "cover.right_5"]
+
+    # Closed, left_1 sits higher than the other four, so the Pico (which
+    # would start all five) isn't used: the four start together, and left_1
+    # when they reach it.
+    await room.command("open_cover")
+    await room.run_until_still()
+    assert room.pico["open"].presses == 0
+    starts = {eid: room[eid].starts[0][0] for eid in [*tall, "cover.left_1"]}
+    assert len({starts[eid] for eid in tall}) == 1
+    assert starts["cover.left_1"] - starts["cover.left_2"] == pytest.approx(8, abs=0.5)
+
+    # Level at the top, so the Pico starts everything from here on.
+    await room.command("set_cover_position", position=40)
+    await room.run_until_still()
+    await room.command("close_cover")
+    await room.run_until_still()
+    assert room.pico["close"].presses == 2
+
+    assert set(room.positions_pct_by_id().values()) == {0}
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
+async def test_living_room_all_stops_level(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(hass, freezer, living_room_all(), start_pct=100)
+
+    await room.command("close_cover")
+    await room.run(10)
+    await room.command("stop_cover")
+    await room.run_until_still()
+
+    assert room.pico["close"].presses == 1
+    assert room.pico["stop"].presses == 1
+    assert all(0 < pct < 100 for pct in room.positions_pct_by_id().values())
+    assert room.group.attributes["aligned"] is True
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
 async def test_level_shades_start_together_without_a_pico(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    # At 62% and 75% the living room shades are level to within 0.4 in: what
+    # At 62% and 75% the two left shades are level to within 0.4 in: what
     # the group calls aligned, and would start with one Pico press. Without a
     # Pico they should still start together, not a fraction of a second apart.
-    left_1, left_2 = living_room(0)
-    left_1.position_pct, left_2.position_pct = 62, 75
-    room = await build_room(hass, freezer, [left_1, left_2], pico=False)
+    room = await build_room(
+        hass,
+        freezer,
+        living_room_left(),
+        pico=False,
+        start_pct={"cover.left_1": 62, "cover.left_2": 75},
+    )
     assert room.group.attributes["aligned"] is True
 
     await room.command("close_cover")
@@ -751,11 +822,15 @@ async def test_level_shades_start_together_without_a_pico(
 async def test_leader_is_commanded_at_once(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    # Seen on the living room shades: converting the leader's hemline back to
+    # Seen on the two left shades: converting the leader's hemline back to
     # a position left a tiny delay, so its command went through a timer.
-    left_1, left_2 = living_room(0)
-    left_1.position_pct, left_2.position_pct = 56, 66
-    room = await build_room(hass, freezer, [left_1, left_2], pico=False)
+    room = await build_room(
+        hass,
+        freezer,
+        living_room_left(),
+        pico=False,
+        start_pct={"cover.left_1": 56, "cover.left_2": 66},
+    )
 
     await room.command("close_cover")
 
@@ -777,24 +852,22 @@ async def test_level_followers_start_together(
                 closed_height=20,
                 open_height=80,
                 travel_time_s=30,
-                position_pct=100,
             ),
             ShadeSpec.even(
                 name="a",
                 closed_height=10,
                 open_height=60,
                 travel_time_s=25,
-                position_pct=80,
             ),
             ShadeSpec.even(
                 name="b",
                 closed_height=30,
                 open_height=70,
                 travel_time_s=20,
-                position_pct=51,
             ),
         ],
         pico=False,
+        start_pct={"cover.lead": 100, "cover.a": 80, "cover.b": 51},
     )
 
     await room.command("close_cover")
@@ -817,7 +890,7 @@ async def test_position_reports_the_target_while_moving(
     # joins later. Dashboard sliders show the reported position, so reporting
     # progress (or a mix of where each shade is heading) would make a slider
     # jump back from where it was dropped.
-    room = await build_room(hass, freezer, living_room(50), pico=False)
+    room = await build_room(hass, freezer, living_room_left(), pico=False, start_pct=50)
 
     await room.command("set_cover_position", position=80)
     reported = []
@@ -834,7 +907,7 @@ async def test_position_reports_the_target_while_moving(
 async def test_stop_mid_run_reports_where_the_shades_stopped(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, pico: bool
 ) -> None:
-    room = await build_room(hass, freezer, living_room(100), pico)
+    room = await build_room(hass, freezer, living_room_left(), pico, start_pct=100)
 
     await room.command("set_cover_position", position=20)
     await room.run(8)
@@ -873,11 +946,11 @@ async def test_identical_rollers_follow_the_group_position(
                 empty_height=LIVING_ROOM_EMPTY_HEIGHT,
                 closed_turns=2.1702,
                 open_turns=18.8592,
-                position_pct=100,
             )
             for name in ("a", "b")
         ],
         pico=False,
+        start_pct=100,
     )
 
     await room.command("set_cover_position", position=target_pct)
@@ -891,7 +964,7 @@ async def test_identical_rollers_follow_the_group_position(
 async def test_matched_rolls_beyond_the_tallest_level_at_rest(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, target_pct: int
 ) -> None:
-    room = await build_room(hass, freezer, matched_rolls(100), pico=False)
+    room = await build_room(hass, freezer, matched_rolls(), pico=False, start_pct=100)
 
     await room.command("set_cover_position", position=target_pct)
     await room.run_until_still()
@@ -904,7 +977,7 @@ async def test_matched_rolls_beyond_the_tallest_level_at_rest(
 async def test_matched_rolls_beyond_the_tallest_stay_level_while_moving(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    room = await build_room(hass, freezer, matched_rolls(0), pico=False)
+    room = await build_room(hass, freezer, matched_rolls(), pico=False)
 
     await room.command("open_cover")
     await room.run_until_still()
