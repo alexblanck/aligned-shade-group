@@ -438,10 +438,18 @@ class Room:
             flow["flow_id"], {"next_step_id": option}
         )
 
+    async def remove_all_controls(self, flow: Any) -> Any:
+        """On the Picos and scenes menu, remove every Pico and scene."""
+        flow = await self.choose(flow, "remove_controls")
+        options = flow["data_schema"].schema["controls"].config["options"]
+        return await self.hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"controls": [option["value"] for option in options]}
+        )
+
     async def add_controls(self, flow: Any) -> Any:
         """On the Picos and scenes menu, add the room's Pico and scenes."""
         configure = self.hass.config_entries.flow.async_configure
-        assert flow["step_id"] == "controls", flow
+        assert flow["step_id"] in ("controls", "controls_suggested"), flow
         if self.pico:
             flow = await self.choose(flow, "add_pico")
             flow = await configure(
@@ -459,7 +467,7 @@ class Room:
                     "position": position_pct,
                 },
             )
-        assert flow["step_id"] == "controls", flow
+        assert flow["step_id"] in ("controls", "controls_suggested"), flow
         return flow
 
     async def command(self, service: str, **data: Any) -> None:
@@ -572,6 +580,54 @@ def matched_rolls() -> list[ShadeSpec]:
             ("high", 7.342, 14.7751),
             ("low", 0.6006, 8.5704),
         )
+    ]
+
+
+# The living room this was tuned on: five identical Serena rollers across one
+# wall, hanging from the same height and all opening at 125 1/8 in. Four close
+# at 17 7/8 in; left_1 has a raised bottom limit (about 49 3/4 in). The roll
+# was sized from left_2 measuring 67 1/8 in at 50%; it predicts every other
+# measurement (25/50/75% on both left shades) to within 3/8 in.
+LIVING_ROOM_ROLL = Roll(tube_diameter=1.625, fabric_thickness=0.02, turns_per_s=0.7)
+LIVING_ROOM_EMPTY_HEIGHT = 6.5
+
+
+def living_room_left() -> list[ShadeSpec]:
+    """The two left shades ("Left Aligned"), one with a raised bottom limit."""
+    return [
+        ShadeSpec(
+            name="left_1",
+            roll=LIVING_ROOM_ROLL,
+            empty_height=LIVING_ROOM_EMPTY_HEIGHT,
+            closed_turns=7.7355,
+            open_turns=18.8592,
+        ),
+        ShadeSpec(
+            name="left_2",
+            roll=LIVING_ROOM_ROLL,
+            empty_height=LIVING_ROOM_EMPTY_HEIGHT,
+            closed_turns=2.1702,
+            open_turns=18.8592,
+        ),
+    ]
+
+
+def living_room_all() -> list[ShadeSpec]:
+    """The whole wall ("All Aligned"): the two left shades plus three right ones
+    the size of left_2, all on one five-shade Pico.
+    """
+    return [
+        *living_room_left(),
+        *(
+            ShadeSpec(
+                name=name,
+                roll=LIVING_ROOM_ROLL,
+                empty_height=LIVING_ROOM_EMPTY_HEIGHT,
+                closed_turns=2.1702,
+                open_turns=18.8592,
+            )
+            for name in ("right_3", "right_4", "right_5")
+        ),
     ]
 
 

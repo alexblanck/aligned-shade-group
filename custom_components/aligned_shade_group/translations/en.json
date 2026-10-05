@@ -63,11 +63,23 @@
       },
       "controls": {
         "title": "Picos and scenes",
-        "description": "A Pico or Lutron scene starts several shades with one command, so they start at exactly the same moment. When some of the group's shades start level, the group uses any Pico or scene covering just those shades, and commands the rest itself.{controls}",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever the shades it covers start level.\n\nWorth adding: ones covering shades that often start level, such as shades that close (or open) at the same height. For example, a scene opening the shades that close at the same height starts them together whenever the group leaves closed, even when it's only going partway.{controls}",
         "menu_options": {
           "add_pico": "Add a Pico",
           "add_scene": "Add a scene",
-          "clear_controls": "Remove all Picos and scenes",
+          "change_control": "Change a Pico or scene",
+          "remove_controls": "Remove Picos or scenes",
+          "save": "Done"
+        }
+      },
+      "controls_suggested": {
+        "title": "Picos and scenes",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever the shades it covers start level.\n\nWorth adding: ones covering shades that often start level, such as shades that close (or open) at the same height. For example, a scene opening the shades that close at the same height starts them together whenever the group leaves closed, even when it's only going partway.\n\nSuggested, as nothing added starts them yet (↑ opening, ↓ closing):{suggestions}{controls}",
+        "menu_options": {
+          "add_pico": "Add a Pico",
+          "add_scene": "Add a scene",
+          "change_control": "Change a Pico or scene",
+          "remove_controls": "Remove Picos or scenes",
           "save": "Done"
         }
       },
@@ -82,13 +94,45 @@
           "device_id": "Its On, Stop and Off buttons are found automatically."
         }
       },
+      "change_pico": {
+        "title": "Change a Pico",
+        "description": "A shade Pico (with a middle button) paired on the Caseta bridge. Its On, Stop and Off buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
+        "data": {
+          "device_id": "Pico",
+          "shades": "Shades it's paired to"
+        },
+        "data_description": {
+          "device_id": "Its On, Stop and Off buttons are found automatically."
+        }
+      },
       "add_scene": {
         "title": "Add a scene",
-        "description": "A Lutron scene that moves some of these shades, all to the same position. Use only a scene that moves nothing else: activating it moves everything in it.",
+        "description": "A Lutron scene that sends some of these shades to the same position, usually fully open or fully closed. Most useful for shades that often start level, such as those that close at the same height. Use only a scene that moves nothing else: activating it moves everything in it.",
         "data": {
           "scene": "Scene",
           "shades": "Shades it moves",
           "position": "Position it sets them to"
+        }
+      },
+      "change_scene": {
+        "title": "Change a scene",
+        "description": "A Lutron scene that sends some of these shades to the same position, usually fully open or fully closed. Most useful for shades that often start level, such as those that close at the same height. Use only a scene that moves nothing else: activating it moves everything in it.",
+        "data": {
+          "scene": "Scene",
+          "shades": "Shades it moves",
+          "position": "Position it sets them to"
+        }
+      },
+      "change_control": {
+        "title": "Change a Pico or scene",
+        "data": {
+          "control": "Pico or scene"
+        }
+      },
+      "remove_controls": {
+        "title": "Remove Picos or scenes",
+        "data": {
+          "controls": "Remove"
         }
       }
     },
@@ -104,7 +148,8 @@
       "no_control_shades": "Choose at least one shade.",
       "control_shades_not_in_group": "Choose only shades in this group.",
       "not_a_scene": "Choose a scene.",
-      "control_already_added": "That one's already added."
+      "control_already_added": "That one's already added.",
+      "scene_positions_differ": "This scene sets its shades to different positions, which this form can't show. Remove it and add it again instead."
     },
     "abort": {
       "reconfigure_successful": "Saved. The group has been reloaded with its new settings."

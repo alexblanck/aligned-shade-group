@@ -53,6 +53,9 @@ FIELD_SHADES = "shades"
 FIELD_PICO_DEVICE = "device_id"
 FIELD_SCENE = "scene"
 FIELD_SCENE_POSITION = "position"
+# Which saved Picos and scenes (by index) to change or remove.
+FIELD_CONTROL = "control"
+FIELD_CONTROLS = "controls"
 # A section holding CONF_HALFWAY_HEIGHT, stored with CONF_TRAVEL_TIME_S.
 FIELD_ROLLER_CURVE = "roller_curve"
 
@@ -163,6 +166,43 @@ def _add_scene_schema(entity_ids: list[str]) -> vol.Schema:
     )
 
 
+def _suggested_starts(
+    shades: list[dict[str, Any]], controls: list[dict[str, Any]]
+) -> list[tuple[bool, list[str]]]:
+    """Shades that often start level together, with the way they'd go (True
+    for opening), that no Pico or scene covers yet.
+
+    After a group move all the shades are level, so all of them often start
+    together either way; shades closing at the same height start level when
+    opening from closed, and those opening at the same height when closing
+    from open.
+    """
+    all_ids = [shade[CONF_ENTITY_ID] for shade in shades]
+    candidates = [(True, all_ids), (False, all_ids)]
+    for opening, height_key in ((True, CONF_CLOSED_HEIGHT), (False, CONF_OPEN_HEIGHT)):
+        by_height: dict[float, list[str]] = {}
+        for shade in shades:
+            by_height.setdefault(shade[height_key], []).append(shade[CONF_ENTITY_ID])
+        candidates += [
+            (opening, ids) for ids in by_height.values() if 2 <= len(ids) < len(all_ids)
+        ]
+    return [
+        (opening, ids)
+        for opening, ids in candidates
+        if not any(_starts(control, ids, opening) for control in controls)
+    ]
+
+
+def _starts(control: dict[str, Any], entity_ids: list[str], opening: bool) -> bool:
+    """Whether a Pico or scene starts exactly these shades, fully that way."""
+    if set(_control_shades(control)) != set(entity_ids):
+        return False
+    if control[CONF_TYPE] != ControlType.SCENE:
+        return True  # a Pico's On or Off button
+    end_pct = 100 if opening else 0
+    return all(pct == end_pct for pct in control[CONF_SCENE_POSITIONS].values())
+
+
 def _control_shades(control: dict[str, Any]) -> list[str]:
     """The shades a stored Pico or scene moves."""
     if control[CONF_TYPE] == ControlType.SCENE:
@@ -238,6 +278,8 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         # Picos and scenes, as stored; when editing, starting with the saved ones.
         self._controls: list[dict[str, Any]] = []
         self._old_controls: list[dict[str, Any]] = []
+        # The index of the Pico or scene being changed, if any.
+        self._changing: int | None = None
         # Every shade's settings, once measured, ready to save.
         self._shades_to_save: list[dict[str, Any]] = []
         # Each shade's settings by entity id: those entered so far, in the order
@@ -397,26 +439,37 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_controls(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """List the Picos and scenes, and offer to add or remove them."""
+        """List the Picos and scenes, and offer to add, change or remove them."""
+        self._changing = None
         options = ["add_pico", "add_scene"]
         if self._controls:
-            options.append("clear_controls")
+            options += ["change_control", "remove_controls"]
         options.append("save")
+        suggestions = _suggested_starts(self._shades_to_save, self._controls)
         return self.async_show_menu(
-            step_id="controls",
+            # With suggestions, a variant whose description introduces them (a
+            # separate step, so that text is translated).
+            step_id="controls_suggested" if suggestions else "controls",
             menu_options=options,
             description_placeholders={
+                "suggestions": "".join(
+                    f"\n- {'↑' if opening else '↓'} "
+                    + ", ".join(self._friendly_name(shade) for shade in ids)
+                    for opening, ids in suggestions
+                ),
                 "controls": "".join(
-                    f"\n- {self._describe_control(control)}"
+                    f"\n\n{self._describe_control(control)}"
                     for control in self._controls
-                )
+                ),
             },
         )
+
+    async_step_controls_suggested = async_step_controls
 
     async def async_step_add_pico(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Add a Pico, paired to some of the shades."""
+        """Add a Pico paired to some of the shades, or change one."""
         errors: dict[str, str] = {}
         if user_input is not None:
             shades = user_input[FIELD_SHADES]
@@ -427,13 +480,13 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 if any(
                     control.get(CONF_PICO_STOP) == buttons.stop
-                    for control in self._controls
+                    for control in self._other_controls()
                 ):
                     errors["base"] = "control_already_added"
                 elif error := self._check_control_shades(shades):
                     errors["base"] = error
                 else:
-                    self._controls.append(
+                    return await self._async_keep_control(
                         {
                             CONF_TYPE: ControlType.PICO,
                             CONF_SHADES: shades,
@@ -442,21 +495,31 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_PICO_CLOSE: buttons.close,
                         }
                     )
-                    return await self.async_step_controls()
 
+        prefill: dict[str, Any] = {FIELD_SHADES: self._entity_ids}
+        if self._changing is not None:
+            control = self._controls[self._changing]
+            prefill = {FIELD_SHADES: control[CONF_SHADES]}
+            if device_id := self._pico_device_id(control[CONF_PICO_OPEN]):
+                prefill[FIELD_PICO_DEVICE] = device_id
         return self.async_show_form(
-            step_id="add_pico",
+            # The same form, titled for changing (a separate step, so the title
+            # is translated).
+            step_id="add_pico" if self._changing is None else "change_pico",
             data_schema=self.add_suggested_values_to_schema(
-                _add_pico_schema(self._entity_ids),
-                user_input or {FIELD_SHADES: self._entity_ids},
+                _add_pico_schema(self._entity_ids), user_input or prefill
             ),
             errors=errors,
         )
 
+    async_step_change_pico = async_step_add_pico
+
     async def async_step_add_scene(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Add a Lutron scene that sets some of the shades to a position."""
+        """Add a Lutron scene that sets some of the shades to a position, or
+        change one.
+        """
         errors: dict[str, str] = {}
         if user_input is not None:
             shades = user_input[FIELD_SHADES]
@@ -464,37 +527,117 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "not_a_scene"
             elif any(
                 control.get(CONF_ENTITY_ID) == user_input[FIELD_SCENE]
-                for control in self._controls
+                for control in self._other_controls()
             ):
                 errors["base"] = "control_already_added"
             elif error := self._check_control_shades(shades):
                 errors["base"] = error
             else:
                 position_pct = round(user_input[FIELD_SCENE_POSITION])
-                self._controls.append(
+                return await self._async_keep_control(
                     {
                         CONF_TYPE: ControlType.SCENE,
                         CONF_ENTITY_ID: user_input[FIELD_SCENE],
                         CONF_SCENE_POSITIONS: dict.fromkeys(shades, position_pct),
                     }
                 )
-                return await self.async_step_controls()
 
+        prefill: dict[str, Any] = {
+            FIELD_SHADES: self._entity_ids,
+            FIELD_SCENE_POSITION: 100,
+        }
+        if self._changing is not None:
+            control = self._controls[self._changing]
+            positions = control[CONF_SCENE_POSITIONS]
+            prefill = {
+                FIELD_SCENE: control[CONF_ENTITY_ID],
+                FIELD_SHADES: list(positions),
+                FIELD_SCENE_POSITION: next(iter(positions.values())),
+            }
         return self.async_show_form(
-            step_id="add_scene",
+            step_id="add_scene" if self._changing is None else "change_scene",
             data_schema=self.add_suggested_values_to_schema(
-                _add_scene_schema(self._entity_ids),
-                user_input
-                or {FIELD_SHADES: self._entity_ids, FIELD_SCENE_POSITION: 100},
+                _add_scene_schema(self._entity_ids), user_input or prefill
             ),
             errors=errors,
         )
 
-    async def async_step_clear_controls(
+    async_step_change_scene = async_step_add_scene
+
+    async def async_step_change_control(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Remove every Pico and scene."""
-        self._controls = []
+        """Choose a Pico or scene to change, then change it in its own form."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            index = int(user_input[FIELD_CONTROL])
+            control = self._controls[index]
+            if control[CONF_TYPE] != ControlType.SCENE:
+                self._changing = index
+                return await self.async_step_change_pico()
+            if len(set(control[CONF_SCENE_POSITIONS].values())) > 1:
+                # The form sets one position for all its shades, so it would
+                # flatten them.
+                errors["base"] = "scene_positions_differ"
+            else:
+                self._changing = index
+                return await self.async_step_change_scene()
+        return self.async_show_form(
+            step_id="change_control",
+            data_schema=vol.Schema(
+                {vol.Required(FIELD_CONTROL): self._controls_selector(multiple=False)}
+            ),
+            errors=errors,
+        )
+
+    async def async_step_remove_controls(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose Picos and scenes to remove."""
+        if user_input is not None:
+            removed = {int(index) for index in user_input[FIELD_CONTROLS]}
+            self._controls = [
+                control
+                for index, control in enumerate(self._controls)
+                if index not in removed
+            ]
+            return await self.async_step_controls()
+        return self.async_show_form(
+            step_id="remove_controls",
+            data_schema=vol.Schema(
+                {vol.Optional(FIELD_CONTROLS): self._controls_selector(multiple=True)}
+            ),
+        )
+
+    def _controls_selector(self, multiple: bool) -> selector.SelectSelector:
+        """Picks saved Picos and scenes, by index, labeled one per line."""
+        return selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(
+                        value=str(index), label=self._control_label(control)
+                    )
+                    for index, control in enumerate(self._controls)
+                ],
+                multiple=multiple,
+                mode=selector.SelectSelectorMode.LIST,
+            )
+        )
+
+    def _other_controls(self) -> list[dict[str, Any]]:
+        """The Picos and scenes besides the one being changed."""
+        return [
+            control
+            for index, control in enumerate(self._controls)
+            if index != self._changing
+        ]
+
+    async def _async_keep_control(self, control: dict[str, Any]) -> ConfigFlowResult:
+        """Add a Pico or scene, or replace the one being changed."""
+        if self._changing is None:
+            self._controls.append(control)
+        else:
+            self._controls[self._changing] = control
         return await self.async_step_controls()
 
     async def async_step_save(
@@ -517,22 +660,45 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         return None
 
     def _describe_control(self, control: dict[str, Any]) -> str:
-        """A Pico or scene, for the menu: its name and its shades."""
-        if control[CONF_TYPE] == ControlType.SCENE:
-            positions = control[CONF_SCENE_POSITIONS]
-            return f"{self._friendly_name(control[CONF_ENTITY_ID])}: " + ", ".join(
-                f"{self._friendly_name(shade)} {position_pct}%"
-                for shade, position_pct in positions.items()
-            )
-        return f"{self._pico_name(control[CONF_PICO_OPEN])}: " + ", ".join(
-            self._friendly_name(shade) for shade in control[CONF_SHADES]
+        """A Pico or scene, for the menu, as Markdown: its name in bold (with a
+        scene's position), then its shades as a list.
+        """
+        name, position, shades = self._control_parts(control)
+        return f"**{name}**{position}" + "".join(f"\n- {shade}" for shade in shades)
+
+    def _control_label(self, control: dict[str, Any]) -> str:
+        """A Pico or scene on one line, for picking it."""
+        name, position, shades = self._control_parts(control)
+        return f"{name}{position}: {', '.join(shades)}"
+
+    def _control_parts(self, control: dict[str, Any]) -> tuple[str, str, list[str]]:
+        """A Pico or scene's name, a scene's position (" → 100%", or ""), and
+        its shades.
+        """
+        if control[CONF_TYPE] != ControlType.SCENE:
+            name = self._pico_name(control[CONF_PICO_OPEN])
+            return name, "", [self._friendly_name(s) for s in control[CONF_SHADES]]
+        name = self._friendly_name(control[CONF_ENTITY_ID])
+        positions = control[CONF_SCENE_POSITIONS]
+        if len(set(positions.values())) == 1:
+            # One position for all, as the form sets: say it once.
+            position = f" → {next(iter(positions.values()))}%"
+            return name, position, [self._friendly_name(s) for s in positions]
+        return (
+            name,
+            "",
+            [f"{self._friendly_name(s)} → {p}%" for s, p in positions.items()],
         )
+
+    def _pico_device_id(self, button: str) -> str | None:
+        """The device a Pico button belongs to."""
+        entry = er.async_get(self.hass).async_get(button)
+        return entry.device_id if entry else None
 
     def _pico_name(self, button: str) -> str:
         """A Pico's device name, found from one of its buttons."""
-        entry = er.async_get(self.hass).async_get(button)
-        if entry and entry.device_id:
-            device = dr.async_get(self.hass).async_get(entry.device_id)
+        if device_id := self._pico_device_id(button):
+            device = dr.async_get(self.hass).async_get(device_id)
             if device:
                 return device.name_by_user or device.name or button
         return button

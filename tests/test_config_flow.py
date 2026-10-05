@@ -30,6 +30,7 @@ from .sim import (
     GROUP,
     HEIGHT_TOLERANCE,
     build_room,
+    living_room_all,
     matched_rolls,
     prefilled_answers,
     same_tops,
@@ -75,7 +76,7 @@ async def reach_controls(hass: HomeAssistant) -> dict[str, Any]:
     result = await configure(
         result["flow_id"], {"travel_time_s": 36, "roller_curve": {}}
     )
-    assert result["step_id"] == "controls"
+    assert result["step_id"] in ("controls", "controls_suggested")
     return result
 
 
@@ -155,12 +156,17 @@ async def test_picos_and_scenes_are_stored_with_their_shades(
     # A Pico paired to the low-sill shade only, and a scene opening both.
     pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
     result = await add_pico_answers(hass, result, pico, [LOW_SILL])
-    assert result["step_id"] == "controls"
+    assert result["step_id"] in ("controls", "controls_suggested")
     assert "Living Room Pico" in result["description_placeholders"]["controls"]
     result = await choose(hass, result, "add_scene")
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {"scene": "scene.open_both", "shades": [HIGH_SILL, LOW_SILL], "position": 100},
+    )
+    # Listed on the menu: each in bold, a scene's position once, then its shades.
+    assert result["description_placeholders"]["controls"] == (
+        "\n\n**Living Room Pico**\n- cover.low_sill"
+        "\n\n**scene.open_both** → 100%\n- cover.high_sill\n- cover.low_sill"
     )
     result = await choose(hass, result, "save")
 
@@ -199,6 +205,127 @@ async def test_picos_and_scenes_can_only_be_added_once(hass: HomeAssistant) -> N
         (await choose(hass, result, "add_scene"))["flow_id"], scene
     )
     assert result["errors"] == {"base": "control_already_added"}
+
+
+async def test_picos_and_scenes_can_be_changed_or_removed_one_at_a_time(
+    hass: HomeAssistant,
+) -> None:
+    result = await reach_controls(hass)
+    pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
+    result = await add_pico_answers(hass, result, pico, [LOW_SILL])
+    result = await choose(hass, result, "add_scene")
+    configure = hass.config_entries.flow.async_configure
+    result = await configure(
+        result["flow_id"],
+        {"scene": "scene.open_both", "shades": [HIGH_SILL, LOW_SILL], "position": 100},
+    )
+
+    # Change the scene: its form opens with its current settings.
+    result = await choose(hass, result, "change_control")
+    result = await configure(result["flow_id"], {"control": "1"})
+    assert result["step_id"] == "change_scene"
+    assert prefilled_answers(result) == {
+        "scene": "scene.open_both",
+        "shades": [HIGH_SILL, LOW_SILL],
+        "position": 100,
+    }
+    result = await configure(
+        result["flow_id"],
+        {"scene": "scene.open_both", "shades": [HIGH_SILL], "position": 50},
+    )
+
+    # The Pico's form opens with its device and shades.
+    result = await choose(hass, result, "change_control")
+    result = await configure(result["flow_id"], {"control": "0"})
+    assert result["step_id"] == "change_pico"
+    assert prefilled_answers(result) == {"device_id": pico, "shades": [LOW_SILL]}
+    result = await configure(result["flow_id"], prefilled_answers(result))
+
+    # Remove just the Pico.
+    result = await choose(hass, result, "remove_controls")
+    result = await configure(result["flow_id"], {"controls": ["0"]})
+    result = await choose(hass, result, "save")
+
+    assert result["data"]["controls"] == [
+        {
+            "type": "scene",
+            "entity_id": "scene.open_both",
+            "positions": {HIGH_SILL: 50},
+        }
+    ]
+
+
+async def test_menu_suggests_shades_that_start_level_together(
+    hass: HomeAssistant,
+) -> None:
+    # Both shades open at 84 but close at different heights: all of them start
+    # level whenever the group leaves a level position (or open), so a Pico or
+    # scene for both is suggested in each direction until one covers them.
+    result = await reach_controls(hass)
+    assert result["step_id"] == "controls_suggested"
+    assert result["description_placeholders"]["suggestions"] == (
+        f"\n- ↑ {HIGH_SILL}, {LOW_SILL}\n- ↓ {HIGH_SILL}, {LOW_SILL}"
+    )
+
+    # A scene opening both covers the first; a Pico for both covers both.
+    result = await choose(hass, result, "add_scene")
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"scene": "scene.open_both", "shades": [HIGH_SILL, LOW_SILL], "position": 100},
+    )
+    assert result["description_placeholders"]["suggestions"] == (
+        f"\n- ↓ {HIGH_SILL}, {LOW_SILL}"
+    )
+    pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
+    result = await add_pico_answers(hass, result, pico, [HIGH_SILL, LOW_SILL])
+    assert result["step_id"] == "controls"
+
+
+async def test_living_room_all_suggests_opening_the_four_identical_shades(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # The five-shade Pico covers all five both ways; the four that close at
+    # the same height (all but left_1) start level opening from closed, and
+    # nothing starts just them yet.
+    room = await build_room(hass, freezer, living_room_all())
+    flow = await room.start_reconfigure()
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], prefilled_answers(flow)
+    )
+    flow = await room.answer_shade_steps(flow)
+
+    assert flow["step_id"] == "controls_suggested"
+    assert flow["description_placeholders"]["suggestions"] == (
+        "\n- ↑ left_2, right_3, right_4, right_5"
+    )
+
+
+async def test_scene_with_different_positions_cannot_be_changed(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # The form sets one position for all of a scene's shades, so changing one
+    # that sets them differently would flatten them; it's refused instead.
+    room = await build_room(hass, freezer, same_tops(), pico=False)
+    scene = {
+        "type": "scene",
+        "entity_id": "scene.staggered",
+        "positions": {HIGH_SILL: 30, LOW_SILL: 50},
+    }
+    hass.config_entries.async_update_entry(
+        room.entry, data={**room.entry.data, "controls": [scene]}
+    )
+    flow = await room.start_reconfigure()
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], prefilled_answers(flow)
+    )
+    flow = await room.answer_shade_steps(flow)
+
+    flow = await room.choose(flow, "change_control")
+    flow = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"control": "0"}
+    )
+    assert flow["step_id"] == "change_control"
+    assert flow["errors"] == {"base": "scene_positions_differ"}
 
 
 async def test_controls_need_shades_and_a_scene(hass: HomeAssistant) -> None:
@@ -360,7 +487,7 @@ async def test_halfway_height_extends_to_shades_above_the_tallest(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"travel_time_s": 30, "roller_curve": {"halfway_height": 48}}
     )
-    assert result["step_id"] == "controls"
+    assert result["step_id"] in ("controls", "controls_suggested")
 
 
 async def test_halfway_height_whose_curve_cannot_reach_every_shade(
@@ -390,7 +517,7 @@ async def test_reconfigure_applies_to_running_group(
     flow = await room.answer_shade_steps(flow)
     # The saved Pico is listed; remove it.
     assert "Pico" in flow["description_placeholders"]["controls"]
-    flow = await room.choose(flow, "clear_controls")
+    flow = await room.remove_all_controls(flow)
     flow = await room.choose(flow, "save")
     assert flow["type"] == "abort", flow
     assert flow["reason"] == "reconfigure_successful"
@@ -439,7 +566,7 @@ async def test_reconfigure_fixes_renamed_pico_buttons(
         flow["flow_id"], prefilled_answers(flow)
     )
     flow = await room.answer_shade_steps(flow)
-    flow = await room.choose(flow, "clear_controls")
+    flow = await room.remove_all_controls(flow)
     flow = await room.add_controls(flow)
     flow = await room.choose(flow, "save")
     await hass.async_block_till_done()

@@ -98,7 +98,15 @@ shades, possibly not all of them.
   Assistant scene would just command each shade separately. A scene should
   move nothing but these shades, since activating it moves everything in it.
 
-Editing keeps the saved controls whose shades are all still in the group.
+The menu suggests sets of shades that often start level together and that no
+Pico or scene starts yet (`_suggested_starts`): all the shades, opening and
+closing (they're level after any group move), shades closing at the same
+height, opening (level when leaving closed), and shades opening at the same
+height, closing. A Pico paired to exactly those shades covers a set both
+ways; a scene covers it when it sends them all fully open (or closed).
+
+Editing keeps the saved controls whose shades are all still in the group;
+each Pico or scene can be changed or removed on its own.
 
 Heights use any unit, as long as every shade uses the same reference (e.g.
 inches from the floor). Tops do not need to match, but every shade's range must
