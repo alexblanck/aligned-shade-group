@@ -749,10 +749,18 @@ class AlignedShadeGroup(CoverEntity):
             delay_s,
             late_s - delay_s,
         )
+        generation = self._generation
         try:
             await self._async_start(plan, delay_s)
         except HomeAssistantError as err:
-            _LOGGER.error("%s: couldn't start shades: %s", self.entity_id, err)
+            _LOGGER.error(
+                "%s: couldn't start shades, so stopped following the plan: %s",
+                self.entity_id,
+                err,
+            )
+            if generation == self._generation:
+                self._abandon_plan()
+                self.async_write_ha_state()
 
     async def _async_fire(self, starter: Starter) -> None:
         """Press a Pico button or activate a scene."""

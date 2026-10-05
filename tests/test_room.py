@@ -398,6 +398,24 @@ async def test_pico_listed_twice_is_pressed_once(
     assert room.positions_pct_by_id() == {HIGH_SILL: 67, LOW_SILL: 72}
 
 
+async def test_failed_delayed_start_abandons_the_plan(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # The Pico paired to high_sill is due to start it at about 6 s, but the
+    # bridge fails by then. The group stops following its plan rather than
+    # reporting high_sill as opening while it never started.
+    room = await build_room(hass, freezer, same_tops(), [HIGH_SILL])
+
+    await room.command("open_cover")
+    await room.run(3)
+    room.bridge.fail = True
+    await room.run(4)
+
+    assert not room[HIGH_SILL].starts
+    assert room.group.state not in ("opening", "closing")
+    assert room.group.attributes["hemline_heights"][HIGH_SILL] == 24
+
+
 async def test_unavailable_shade(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,

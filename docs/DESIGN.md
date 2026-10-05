@@ -251,7 +251,8 @@ shade separately. For the same reason, round a measured travel time down. If
 a shade reports a position that isn't part of the plan (another command, such
 as a physical Pico press, took over), the group stops following its plan. If a
 starting command fails, the plan is abandoned and the error returned to the
-caller.
+caller; if a later start fails, the plan is abandoned too and the error
+logged, so the group doesn't report shades as moving that never started.
 
 **Missing devices** — pressing a button that doesn't exist does nothing and
 raises nothing, so a Pico or scene is only used (for a move or a stop) while
