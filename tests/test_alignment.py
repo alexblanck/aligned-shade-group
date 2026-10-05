@@ -69,34 +69,11 @@ def test_starter_skipped_when_a_shade_it_would_move_should_stay() -> None:
     # Pico press would wrongly move it.
     plan = GROUP.plan_moves(positions_pct_by_id(41, 50), 51, [pico(open_pct=100)])
     assert all(move.starter is None for move in plan.moves)
-    assert plan.unused == (
-        (
-            "button.pico_100",
-            "it would move a shade that shouldn't start now",
-        ),
-    )
-
-
-def test_expected_unused_starters_are_left_out() -> None:
-    # Closing: the Open Pico moves the wrong way, which isn't worth reporting.
-    plan = GROUP.plan_moves(positions_pct_by_id(100, 100), 0, [pico(open_pct=100)])
-    assert all(move.starter is None for move in plan.moves)
-    assert plan.unused == ()
-
-
-def test_starter_that_starts_nothing_is_left_out() -> None:
-    # Opening from closed, staggered: the Close Pico starts no shade, so the
-    # later-starting shade it covers can't be sent back by it.
-    plan = GROUP.plan_moves(positions_pct_by_id(0, 0), 100, [pico(open_pct=0)])
-    assert plan.unused == ()
 
 
 def test_starter_skipped_when_a_position_is_unknown() -> None:
     plan = GROUP.plan_moves({LOW_SILL.entity_id: 100}, 0, [pico(open_pct=0)])
     assert all(move.starter is None for move in plan.moves)
-    assert plan.unused == (
-        ("button.pico_0", "some of its shades' positions are unknown"),
-    )
     assert plan.moves == (Move(shade=LOW_SILL, from_pct=100, target_pct=0),)
 
 

@@ -644,7 +644,6 @@ class AlignedShadeGroup(CoverEntity):
                 (move.starter.name, move.delay_s) for move in plan.moves if move.starter
             )
         )
-        lines.extend(f"not using {name} ({reason})" for name, reason in plan.unused)
         moving = set()
         for move in plan.moves:
             moving.add(move.shade.entity_id)
@@ -745,28 +744,31 @@ class AlignedShadeGroup(CoverEntity):
                 self.async_write_ha_state()
             raise
 
-    async def _async_start(self, plan: Plan, delay_s: float) -> None:
-        """Fire the starters and send the commands due `delay_s` into the plan."""
+    async def _async_start(
+        self, plan: Plan, delay_s: float, late_s: float | None = None
+    ) -> None:
+        """Fire the starters and send the commands due `delay_s` into the plan.
+
+        `late_s` is how late the timer that started them fired, for the log.
+        """
+        tag = f"{self._run} at {delay_s:.1f}s"
+        if late_s is not None:
+            tag += f" (timer {late_s:+.3f}s)"
         due = [move for move in plan.moves if move.delay_s == delay_s]
         # Each starter once, though it starts several moves.
         starters = {move.starter.name: move.starter for move in due if move.starter}
-        await asyncio.gather(*(self._async_fire(s) for s in starters.values()))
-        await self._async_set_positions(move for move in due if move.needs_command)
+        await asyncio.gather(*(self._async_fire(s, tag) for s in starters.values()))
+        await self._async_set_positions(
+            (move for move in due if move.needs_command), tag
+        )
 
     async def _async_delayed_start(
         self, plan: Plan, delay_s: float, _now: datetime
     ) -> None:
-        late_s = (dt_util.utcnow() - self._started).total_seconds()
-        _LOGGER.debug(
-            "%s: %s: delayed start at %.1fs (timer %+.3fs from schedule)",
-            self.entity_id,
-            self._run,
-            delay_s,
-            late_s - delay_s,
-        )
+        late_s = (dt_util.utcnow() - self._started).total_seconds() - delay_s
         generation = self._generation
         try:
-            await self._async_start(plan, delay_s)
+            await self._async_start(plan, delay_s, late_s)
         except HomeAssistantError as err:
             _LOGGER.error(
                 "%s: %s: couldn't start shades, so stopped following the plan: %s",
@@ -778,16 +780,16 @@ class AlignedShadeGroup(CoverEntity):
                 self._abandon_plan()
                 self.async_write_ha_state()
 
-    async def _async_fire(self, starter: Starter) -> None:
+    async def _async_fire(self, starter: Starter, tag: str) -> None:
         """Press a Pico button or activate a scene."""
         name = starter.name
         if split_entity_id(name)[0] == Platform.SCENE:
             took_s = await self._async_call(Platform.SCENE, SERVICE_TURN_ON, name)
             _LOGGER.debug(
-                "%s: %s: activated %s (%.3fs)", self.entity_id, self._run, name, took_s
+                "%s: %s: activated %s (%.3fs)", self.entity_id, tag, name, took_s
             )
         else:
-            await self._async_press(name, self._run)
+            await self._async_press(name, tag)
 
     @callback
     def _async_plan_done(self, _now: datetime) -> None:
@@ -815,7 +817,7 @@ class AlignedShadeGroup(CoverEntity):
         self._moving = False
         self._direction = None
 
-    async def _async_set_positions(self, moves: Iterable[Move]) -> None:
+    async def _async_set_positions(self, moves: Iterable[Move], tag: str) -> None:
         """Send the moves' commands at once and log how long each took."""
         moves = list(moves)
         if not moves:
@@ -834,7 +836,7 @@ class AlignedShadeGroup(CoverEntity):
         _LOGGER.debug(
             "%s: %s: sent %s",
             self.entity_id,
-            self._run,
+            tag,
             ", ".join(
                 f"{move.shade.entity_id} -> {move.target_pct}% ({seconds:.3f}s)"
                 for move, seconds in zip(moves, took_s, strict=True)
@@ -842,7 +844,7 @@ class AlignedShadeGroup(CoverEntity):
         )
 
     async def _async_press(self, button_entity_id: str, tag: str) -> None:
-        """Press a button; `tag` says what for in the log ("run #N" or "stop")."""
+        """Press a button; `tag` says what for in the log (a run, or "stop")."""
         took_s = await self._async_call(BUTTON_DOMAIN, SERVICE_PRESS, button_entity_id)
         _LOGGER.debug(
             "%s: %s: pressed %s (%.3fs)", self.entity_id, tag, button_entity_id, took_s
