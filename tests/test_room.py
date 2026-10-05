@@ -355,6 +355,25 @@ async def test_late_starter_leaves_earlier_shades_alone(
     assert room.misalignment(room.history[-1]) <= HEIGHT_TOLERANCE
 
 
+async def test_stop_before_a_picos_shades_start(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # A Pico paired to high_sill only. Opening from closed, low_sill leads and
+    # high_sill is due to start at about 6 s. Stopping at 3 s mustn't press
+    # that Pico: with none of its shades moving, its middle button would send
+    # high_sill to its favorite position.
+    room = await build_room(hass, freezer, same_tops(), [HIGH_SILL])
+
+    await room.command("open_cover")
+    await room.run(3)
+    await room.command("stop_cover")
+    await room.run(20)
+
+    assert room.pico["stop"].presses == 0
+    assert room[HIGH_SILL].position_pct == 0
+    assert not any(shade.moving for shade in room.shades.values())
+
+
 async def test_unavailable_shade(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,

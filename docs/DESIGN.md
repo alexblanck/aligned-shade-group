@@ -265,8 +265,10 @@ cleared when nothing is missing.
 
 **Stop** — cancel any pending starts, then make sure every shade gets a stop,
 since shades may be moving that the plan doesn't know about:
-- While a plan is running, press the Stop of every Pico covering any shade of
-  the plan.
+- While a plan is running, press the Stop of every Pico covering a shade the
+  plan has travelling right now (started and not yet arrived, by its timing).
+  A Pico whose shades are all waiting to start or have arrived isn't pressed:
+  with none of them moving, its middle button would send them to favorite.
 - `stop_cover` on every shade not covered by a pressed Pico.
 
 Scenes can't stop shades.
@@ -277,8 +279,8 @@ thinks it's moving. Verified on Serena shades (pressed through Home Assistant,
 so through the bridge): the decision covers all the Pico's shades at once.
 While any of them is moving, it stops the moving ones and leaves stationary
 ones where they are; only when all are stationary does it go to favorite. So
-stopping partway through a staggered run (some shades arrived or not yet
-started) is safe. The simulator models it the same way.
+pressing it is safe as long as at least one of its shades is moving, which is
+why stop only presses Picos with a travelling shade. The simulator models it the same way.
 
 ## Out of scope (v1)
 

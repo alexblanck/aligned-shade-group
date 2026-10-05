@@ -97,6 +97,14 @@ class _RunningMove:
             expected.add(self.starter_pct)
         return expected
 
+    def travelling(self, now: datetime) -> bool:
+        """Whether the shade is estimated to be moving at `now`: started, not
+        yet arrived, and not a hold.
+        """
+        move = self.move
+        travel_s = abs(move.target_pct - move.from_pct) / 100 * move.shade.travel_time_s
+        return self.start <= now < self.start + timedelta(seconds=travel_s)
+
     def estimate_position(self, now: datetime) -> int:
         move = self.move
         elapsed_s = max(0.0, (now - self.start).total_seconds())
@@ -507,18 +515,24 @@ class AlignedShadeGroup(CoverEntity):
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop every shade: with Picos where it's safe, else one by one."""
-        running = set(self._running_moves) if self._moving else set()
+        now = dt_util.utcnow()
+        travelling = {
+            entity_id
+            for entity_id, running_move in self._running_moves.items()
+            if self._moving and running_move.travelling(now)
+        }
         self._abandon_plan()
         self.async_write_ha_state()
         # Every shade gets a stop, since others may be moving that the plan
         # doesn't know about. A shade Pico's middle button stops its shades
         # while any of them is moving, but sends them to their favorite
-        # position when all are still, so only Picos covering shades of a
-        # running plan are pressed; every other shade gets its own stop.
+        # position when all are still, so only Picos covering a shade the plan
+        # has travelling right now (not waiting to start, nor arrived) are
+        # pressed; every other shade gets its own stop.
         picos = [
             control
             for control in self._async_usable_controls()
-            if isinstance(control, _Pico) and running & set(control.shades)
+            if isinstance(control, _Pico) and travelling & set(control.shades)
         ]
         await asyncio.gather(*(self._async_press(pico.buttons.stop) for pico in picos))
         covered = {shade for pico in picos for shade in pico.shades}
