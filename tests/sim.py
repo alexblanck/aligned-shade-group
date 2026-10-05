@@ -61,13 +61,15 @@ class Bridge:
     """How the simulated Lutron bridge delivers commands.
 
     `latency_s` is how long each command takes to reach a shade (the clock
-    moves on meanwhile). `gate`, when set, holds position commands until the
-    test sets the event. `fail` makes every command raise, like an unreachable
-    bridge.
+    moves on meanwhile); by default about what a real Caseta bridge takes, so
+    shades commanded together start slightly apart, while a Pico press or
+    scene starts its shades at the same instant. `gate`, when set, holds
+    position commands until the test sets the event. `fail` makes every
+    command raise, like an unreachable bridge.
     """
 
     freezer: FrozenDateTimeFactory
-    latency_s: float = 0.0
+    latency_s: float = 0.04
     gate: asyncio.Event | None = None
     fail: bool = False
 
