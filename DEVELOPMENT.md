@@ -134,6 +134,14 @@ are stored in the config entry's `data`. There's no options flow: Home
 Assistant's options are for optional tweaks, while every setting here defines
 the group, so editing is a reconfigure flow.
 
+**Saved groups must keep working.** Breaking backwards compatibility with
+saved settings is no longer acceptable: a change must never break existing
+groups or make anyone recreate one. Adding an optional key is fine if older
+entries without it get a sensible default. Changing the stored format means
+bumping the config flow's `VERSION` and adding an `async_migrate_entry` (in
+`__init__.py`) that converts older entries, with a test that sets up an entry
+in the old format and checks it loads and behaves the same.
+
 ## Trying it on real hardware
 
 Since this repository has releases, HACS only offers releases in its UI; its
