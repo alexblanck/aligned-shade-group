@@ -188,7 +188,9 @@ class Plan:
     moves, sorted by start delay, plus "hold" moves (start equals target) for
     shades still heading to an earlier target. At each start delay, fire the
     starters of that moment's moves, each once, then send the commands for
-    moves that need one. `unused` says why each available starter wasn't used.
+    moves that need one. `unused` says why starters that could have helped
+    weren't used; ones that move the wrong way or none of the moving shades
+    are left out, as that's expected.
 
     A plan is its moves, not its starts (each listing the moves it begins):
     most questions are about one shade (where is it heading, where is it now,
@@ -356,12 +358,16 @@ class AlignmentGroup:
                 )
         planned.sort(key=lambda move: move.delay_s)
         unused = tuple(
-            (
-                starter.name,
-                "; ".join(reasons.get(starter.name, {"none of its shades move": None})),
-            )
+            (starter.name, "; ".join(notable))
             for starter in starters
             if starter.name not in used
+            and (
+                notable := [
+                    reason
+                    for reason in reasons.get(starter.name, {})
+                    if reason not in _EXPECTED
+                ]
+            )
         )
         return Plan(moves=(*holds, *planned), unused=unused)
 
@@ -424,6 +430,13 @@ def _timed_groups(
     return timed
 
 
+_WRONG_WAY = "it would move a shade the wrong way"
+_NONE_MOVE = "none of its shades move"
+# Reasons a starter isn't used that are expected (an Open button while
+# closing), so not worth reporting.
+_EXPECTED = {_WRONG_WAY, _NONE_MOVE}
+
+
 def _starter_fit(
     starter: Starter,
     group: list[Move],
@@ -436,10 +449,11 @@ def _starter_fit(
     all at once, so each of those must be in this group (moving now, from this
     level) and be sent the way its move goes. A shade that should end up
     elsewhere gets a follow-up command. A shade already at the starter's
-    position isn't started by it, and mustn't be moving with another group.
+    position isn't started by it, and mustn't be moving separately.
     """
     moves_by_id = {move.shade.entity_id: move for move in group}
     covered = set()
+    sends_back = False
     for entity_id, starter_pct in starter.targets.items():
         if entity_id not in positions_pct_by_id:
             return "some of its shades' positions are unknown"
@@ -449,14 +463,15 @@ def _starter_fit(
             # shade stays put or starts now with this group, but one moving
             # with another group may have left by the time the starter fires,
             # and would be sent back.
-            if entity_id in moves_by_id or entity_id not in moving:
-                continue
-            return "it would send back a shade moving with another group"
+            sends_back |= entity_id not in moves_by_id and entity_id in moving
+            continue
         if (move := moves_by_id.get(entity_id)) is None:
-            return "it would move a shade that isn't starting with this group"
+            return "it would move a shade that shouldn't start now"
         if (starter_pct > from_pct) != (move.direction() is Direction.OPENING):
-            return "it would move a shade the wrong way"
+            return _WRONG_WAY
         covered.add(entity_id)
     if not covered:
-        return "none of its shades move"
+        return _NONE_MOVE  # so it isn't fired, and sends nothing back
+    if sends_back:
+        return "it would send back a shade that moves separately"
     return covered

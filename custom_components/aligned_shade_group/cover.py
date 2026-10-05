@@ -221,6 +221,8 @@ class AlignedShadeGroup(CoverEntity):
         self._timers: list[CALLBACK_TYPE] = []
         # When the running plan started; its delays count from here.
         self._started = dt_util.utcnow()
+        # Numbers each plan, so its log lines ("plan #N", "run #N") go together.
+        self._plan_number = 0
         # Moves of the running plan, keyed by entity id.
         self._running_moves: dict[str, _RunningMove] = {}
         # Bumped whenever a plan is abandoned, so a failing command can tell
@@ -262,6 +264,11 @@ class AlignedShadeGroup(CoverEntity):
         """
         self._async_update_missing_issue()
 
+    @property
+    def _run(self) -> str:
+        """The log tag for running the current plan."""
+        return f"run #{self._plan_number}"
+
     @callback
     def _async_member_changed(self, event: Event[EventStateChangedData]) -> None:
         self._update_positions()
@@ -284,9 +291,10 @@ class AlignedShadeGroup(CoverEntity):
         if position_pct in running_move.expected_reports():
             return
         _LOGGER.info(
-            "%s: %s reported %s%%, which isn't part of the running plan; "
-            "another command took over, so the group stops following its plan",
+            "%s: %s: %s reported %s%%, which isn't part of the plan; another "
+            "command took over, so the group stops following its plan",
             self.entity_id,
+            self._run,
             entity_id,
             position_pct,
         )
@@ -538,12 +546,14 @@ class AlignedShadeGroup(CoverEntity):
         # Each button once: a second press would find the shades still and
         # send them to favorite.
         stop_buttons = dict.fromkeys(pico.buttons.stop for pico in picos)
-        await asyncio.gather(*(self._async_press(button) for button in stop_buttons))
+        await asyncio.gather(
+            *(self._async_press(button, "stop") for button in stop_buttons)
+        )
         covered = {shade for pico in picos for shade in pico.shades}
         if rest := [e for e in self._entity_ids if e not in covered]:
             took_s = await self._async_call(COVER_DOMAIN, SERVICE_STOP_COVER, rest)
             _LOGGER.debug(
-                "%s: stopped %s one by one (%.3fs)",
+                "%s: stop: stopped %s one by one (%.3fs)",
                 self.entity_id,
                 ", ".join(rest),
                 took_s,
@@ -552,7 +562,7 @@ class AlignedShadeGroup(CoverEntity):
     async def _async_set_group_position(self, target_pct: int) -> None:
         """Plan the moves to `target_pct` and run the plan."""
         positions_pct_by_id = self._planning_positions()
-        positions_source = "estimated" if self._moving else "reported"
+        replaced_run = self._run if self._moving else None
         moving_entity_ids = set(self._running_moves) if self._moving else set()
         self._async_update_missing_issue()
         if missing := [e for e in self._entity_ids if e not in positions_pct_by_id]:
@@ -562,6 +572,7 @@ class AlignedShadeGroup(CoverEntity):
                 ", ".join(missing),
             )
         self._abandon_plan()
+        self._plan_number += 1
         plan = self._group.plan_moves(
             positions_pct_by_id,
             target_pct=target_pct,
@@ -575,9 +586,11 @@ class AlignedShadeGroup(CoverEntity):
         direction = self._group_direction(positions_pct_by_id, target_pct)
         if _LOGGER.isEnabledFor(logging.DEBUG):
             for line in self._describe_plan(
-                plan, target_pct, positions_pct_by_id, positions_source
+                plan, target_pct, positions_pct_by_id, replaced_run
             ):
-                _LOGGER.debug("%s: %s", self.entity_id, line)
+                _LOGGER.debug(
+                    "%s: plan #%s: %s", self.entity_id, self._plan_number, line
+                )
         if plan.moves:
             await self._async_run_plan(plan, direction)
         else:
@@ -608,36 +621,35 @@ class AlignedShadeGroup(CoverEntity):
         plan: Plan,
         target_pct: int,
         positions_pct_by_id: dict[str, int],
-        positions_source: str,
+        replaced_run: str | None,
     ) -> list[str]:
         """A plan as log lines: a summary, what starts shades, then each move.
 
-        Logged one line each, so every line can be found by grepping for the
-        group or a shade.
+        Logged one line each, tagged "plan #N", so every line can be found by
+        grepping for the group, a shade, or the plan.
         """
-        lines = [
-            f"plan to {target_pct}% "
+        summary = (
+            f"to {target_pct}% "
             f"(hemline {self._group.height_for_position(target_pct):.1f}), "
-            f"{plan.duration_s():.1f}s, from {positions_source} positions",
-        ]
+            f"{plan.duration_s():.1f}s"
+        )
+        if replaced_run:
+            summary += f", replacing {replaced_run} from estimated positions"
+        lines = [summary]
         if not self._controls:
-            lines.append("plan: no Picos or scenes set up")
+            lines.append("no Picos or scenes set up")
         lines.extend(
-            f"plan: starts {name} at {delay_s:.1f}s"
+            f"starts {name} at {delay_s:.1f}s"
             for name, delay_s in dict.fromkeys(
                 (move.starter.name, move.delay_s) for move in plan.moves if move.starter
             )
         )
-        lines.extend(
-            f"plan: not using {name} ({reason})" for name, reason in plan.unused
-        )
+        lines.extend(f"not using {name} ({reason})" for name, reason in plan.unused)
         moving = set()
         for move in plan.moves:
             moving.add(move.shade.entity_id)
             if move.from_pct == move.target_pct:
-                lines.append(
-                    f"plan: {move.shade.entity_id} holds at {move.target_pct}%"
-                )
+                lines.append(f"{move.shade.entity_id} holds at {move.target_pct}%")
                 continue
             if move.starter is None:
                 start = f"at {move.delay_s:.1f}s"
@@ -646,13 +658,13 @@ class AlignedShadeGroup(CoverEntity):
                 if move.needs_command:
                     start += ", then is sent its target"
             lines.append(
-                f"plan: {move.shade.entity_id} {move.from_pct}% "
+                f"{move.shade.entity_id} {move.from_pct}% "
                 f"(hemline {move.from_height():.1f}) -> {move.target_pct}%, "
                 f"starts {start}, arrives at {move.arrival_s():.1f}s"
             )
         for entity_id, position_pct in positions_pct_by_id.items():
             if entity_id not in moving:
-                lines.append(f"plan: {entity_id} stays at {position_pct}%")
+                lines.append(f"{entity_id} stays at {position_pct}%")
         return lines
 
     @callback
@@ -724,8 +736,9 @@ class AlignedShadeGroup(CoverEntity):
         except HomeAssistantError as err:
             if generation == self._generation:
                 _LOGGER.debug(
-                    "%s: plan abandoned: starting command failed: %s",
+                    "%s: %s: abandoned: starting command failed: %s",
                     self.entity_id,
+                    self._run,
                     err,
                 )
                 self._abandon_plan()
@@ -745,8 +758,9 @@ class AlignedShadeGroup(CoverEntity):
     ) -> None:
         late_s = (dt_util.utcnow() - self._started).total_seconds()
         _LOGGER.debug(
-            "%s: delayed start at %.1fs (timer %+.3fs from schedule)",
+            "%s: %s: delayed start at %.1fs (timer %+.3fs from schedule)",
             self.entity_id,
+            self._run,
             delay_s,
             late_s - delay_s,
         )
@@ -755,8 +769,9 @@ class AlignedShadeGroup(CoverEntity):
             await self._async_start(plan, delay_s)
         except HomeAssistantError as err:
             _LOGGER.error(
-                "%s: couldn't start shades, so stopped following the plan: %s",
+                "%s: %s: couldn't start shades, so stopped following the plan: %s",
                 self.entity_id,
+                self._run,
                 err,
             )
             if generation == self._generation:
@@ -768,16 +783,20 @@ class AlignedShadeGroup(CoverEntity):
         name = starter.name
         if split_entity_id(name)[0] == Platform.SCENE:
             took_s = await self._async_call(Platform.SCENE, SERVICE_TURN_ON, name)
-            _LOGGER.debug("%s: activated %s (%.3fs)", self.entity_id, name, took_s)
+            _LOGGER.debug(
+                "%s: %s: activated %s (%.3fs)", self.entity_id, self._run, name, took_s
+            )
         else:
-            await self._async_press(name)
+            await self._async_press(name, self._run)
 
     @callback
     def _async_plan_done(self, _now: datetime) -> None:
         # Caseta shades report their destination immediately, so the plan's
         # timing is the only sign they've stopped. Ending late is worse than
         # early: a Pico stop on stationary shades sends them to favorite.
-        _LOGGER.debug("%s: plan finished: planned travel time elapsed", self.entity_id)
+        _LOGGER.debug(
+            "%s: %s: finished: planned travel time elapsed", self.entity_id, self._run
+        )
         self._abandon_plan()
         self.async_write_ha_state()
 
@@ -813,18 +832,20 @@ class AlignedShadeGroup(CoverEntity):
             )
         )
         _LOGGER.debug(
-            "%s: sent %s",
+            "%s: %s: sent %s",
             self.entity_id,
+            self._run,
             ", ".join(
                 f"{move.shade.entity_id} -> {move.target_pct}% ({seconds:.3f}s)"
                 for move, seconds in zip(moves, took_s, strict=True)
             ),
         )
 
-    async def _async_press(self, button_entity_id: str) -> None:
+    async def _async_press(self, button_entity_id: str, tag: str) -> None:
+        """Press a button; `tag` says what for in the log ("run #N" or "stop")."""
         took_s = await self._async_call(BUTTON_DOMAIN, SERVICE_PRESS, button_entity_id)
         _LOGGER.debug(
-            "%s: pressed %s (%.3fs)", self.entity_id, button_entity_id, took_s
+            "%s: %s: pressed %s (%.3fs)", self.entity_id, tag, button_entity_id, took_s
         )
 
     async def _async_call(
