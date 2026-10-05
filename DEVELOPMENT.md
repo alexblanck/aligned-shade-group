@@ -125,16 +125,36 @@ the group, so editing is a reconfigure flow.
 
 ## Trying it on real hardware
 
-Either:
+Since this repository has releases, HACS only offers releases in its UI; its
+Redownload menu no longer lists branches ([hacs/integration#4009](https://github.com/hacs/integration/issues/4009)).
+Ways to run unreleased code:
 
-- **HACS:** develop on `main`; in HACS, Redownload the integration, pick
-  `main`, and restart Home Assistant after each push.
+- **A branch or commit, via an action (quickest for your own testing).** In
+  Developer tools → Actions, run `update.install` on the integration's HACS
+  update entity (find it under Settings → Entities by searching for "Aligned
+  Shade Group"), with a branch name or commit SHA as the version, then
+  restart Home Assistant:
+
+  ```yaml
+  action: update.install
+  target:
+    entity_id: update.aligned_shade_group_update
+  data:
+    version: main
+  ```
+
+  HACS considers this an advanced feature, to use only when the author says
+  so; fine for the author and for testers you've asked.
+- **A pre-release (best for asking others to test).** Publish a GitHub
+  pre-release (see Releasing). Testers enable the integration's pre-release
+  switch in HACS (a switch entity, disabled by default) and then get it as an
+  ordinary update. Turning the switch off again goes back to full releases.
 - **Manual:** copy `custom_components/aligned_shade_group` into your Home
   Assistant config's `custom_components/` folder and restart.
 
-Turn on debug logging (see the README) to see each plan the group makes: the positions
-it planned from, whether it used the Pico (and why not), and every shade
-command with its delay.
+Turn on debug logging (see the README) to see each plan the group makes: the
+positions it planned from, whether it used the Pico (and why not), and every
+shade command with its delay.
 
 ## Icon
 
@@ -160,6 +180,11 @@ cp /tmp/icon_512.png custom_components/aligned_shade_group/brand/icon@2x.png
 1. Bump `version` in `custom_components/aligned_shade_group/manifest.json`.
 2. Commit, tag `vX.Y.Z`, and push the tag.
 3. Publish a GitHub release for the tag; HACS offers releases as versions.
+
+For a pre-release, use a version like `0.4.0b1` (tag `v0.4.0b1`) and publish
+it with `gh release create v0.4.0b1 --prerelease`. HACS only offers it to
+users who've turned on the integration's pre-release switch; the next full
+release supersedes it for everyone.
 
 `hacs.json` sets the minimum Home Assistant version; raise it if the code
 starts depending on newer Home Assistant APIs.
