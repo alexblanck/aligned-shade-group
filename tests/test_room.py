@@ -331,6 +331,30 @@ async def test_pico_paired_to_some_shades_starts_and_stops_them(
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
+async def test_late_starter_leaves_earlier_shades_alone(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # A scene sets both shades to 30%. high_sill starts there (hemline 42 in)
+    # and low_sill at 40% (40.8 in): not level, so going to 10% high_sill leads
+    # at 0 s, and low_sill starts when high_sill reaches it, about 0.6 s later.
+    # By then high_sill has left 30%, so activating the scene for low_sill
+    # would send high_sill back up to 30%.
+    room = await build_room(
+        hass,
+        freezer,
+        same_tops(),
+        pico=False,
+        start_pct={HIGH_SILL: 30, LOW_SILL: 40},
+        scenes={"both_to_30": {HIGH_SILL: 30, LOW_SILL: 30}},
+    )
+
+    await room.command("set_cover_position", position=10)
+    await room.run_until_still()
+
+    assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 10}
+    assert room.misalignment(room.history[-1]) <= HEIGHT_TOLERANCE
+
+
 async def test_unavailable_shade(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,

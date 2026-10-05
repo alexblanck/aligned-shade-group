@@ -308,6 +308,9 @@ class AlignmentGroup:
                 moves.append(move)
             elif shade.entity_id in moving_entity_ids:
                 holds.append(move)
+        # Shades moving (or held) in this plan, which a starter mustn't touch
+        # unless it's starting them.
+        moving = {move.shade.entity_id for move in (*moves, *holds)}
 
         timed = [
             timed_group
@@ -323,7 +326,7 @@ class AlignmentGroup:
         for group, delay_s in timed:
             fits: list[tuple[Starter, set[str]]] = []
             for starter in starters:
-                fit = _starter_fit(starter, group, positions_pct_by_id)
+                fit = _starter_fit(starter, group, positions_pct_by_id, moving)
                 if isinstance(fit, str):
                     reasons.setdefault(starter.name, fit)
                 else:
@@ -416,14 +419,18 @@ def _timed_groups(
 
 
 def _starter_fit(
-    starter: Starter, group: list[Move], positions_pct_by_id: Mapping[str, int]
+    starter: Starter,
+    group: list[Move],
+    positions_pct_by_id: Mapping[str, int],
+    moving: Collection[str],
 ) -> set[str] | str:
     """The group's shades a starter would start, or why it can't be used.
 
     A starter moves every one of its shades that isn't already at its target,
     all at once, so each of those must be in this group (moving now, from this
     level) and be sent the way its move goes. A shade that should end up
-    elsewhere gets a follow-up command.
+    elsewhere gets a follow-up command. A shade already at the starter's
+    position isn't started by it, and mustn't be moving with another group.
     """
     moves_by_id = {move.shade.entity_id: move for move in group}
     covered = set()
@@ -432,7 +439,13 @@ def _starter_fit(
             return "some of its shades' positions are unknown"
         from_pct = positions_pct_by_id[entity_id]
         if starter_pct == from_pct:
-            continue  # already there, so the starter leaves it alone
+            # It doesn't start a shade already at its position: fine if that
+            # shade stays put or starts now with this group, but one moving
+            # with another group may have left by the time the starter fires,
+            # and would be sent back.
+            if entity_id in moves_by_id or entity_id not in moving:
+                continue
+            return "it would send back a shade moving with another group"
         if (move := moves_by_id.get(entity_id)) is None:
             return "it would move a shade that isn't starting with this group"
         if (starter_pct > from_pct) != (move.direction() is Direction.OPENING):

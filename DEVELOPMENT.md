@@ -93,6 +93,11 @@ When adding or changing behavior:
   `sim.py` to model it rather than working around it in a test.
 - Add a unit test only when the math is subtle and hard to reach end to end.
 
+When fixing a bug, reproduce it first: write the scenario that shows the
+failure, run it and see it fail for the reason you expect, then fix the code
+and see the same test pass. A test written after the fix may never have been
+able to fail.
+
 The simulator fires timers with `async_fire_time_changed_exact`: the plain
 `async_fire_time_changed` bumps the time by up to 0.5 s (to suit HA's polling
 helpers), which would hide timing bugs.
