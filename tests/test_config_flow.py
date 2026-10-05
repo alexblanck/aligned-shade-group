@@ -401,7 +401,7 @@ async def test_group_has_its_own_device(
     device = dr.async_get(hass).async_get(entity.device_id)
     assert device.name == "Living Room"
     assert device.entry_type is None
-    assert device.config_entries == {room.entry.entry_id}
+    assert device.config_entry_id == room.entry.entry_id
 
 
 async def test_reconfigure_changes_only_what_was_edited(
