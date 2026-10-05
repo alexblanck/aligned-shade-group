@@ -290,10 +290,18 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
                     return await self.async_step_travel()
                 return await self.async_step_shade()  # the next shade's form
 
+        # Its saved heights when editing, else the previous shade's, since
+        # side-by-side shades are often the same size.
+        prefill = self._old_shades.get(entity_id)
+        prefilled_from_previous = prefill is None and bool(self._new_shades)
+        if prefill is None:
+            prefill = next(reversed(self._new_shades.values()), {})
         return self.async_show_form(
-            step_id="shade",
+            # The same form, but whose description says it's prefilled from
+            # the previous shade (a separate step, so the note is translated).
+            step_id="shade_prefilled" if prefilled_from_previous else "shade",
             data_schema=self.add_suggested_values_to_schema(
-                SHADE_SCHEMA, user_input or self._old_shades.get(entity_id, {})
+                SHADE_SCHEMA, user_input or prefill
             ),
             errors=errors,
             description_placeholders={
@@ -302,6 +310,8 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
                 "count": str(len(self._entity_ids)),
             },
         )
+
+    async_step_shade_prefilled = async_step_shade
 
     async def async_step_travel(
         self, user_input: dict[str, Any] | None = None

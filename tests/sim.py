@@ -366,7 +366,7 @@ class Room:
         """
         configure = self.hass.config_entries.flow.async_configure
         for shade in self.shades.values():
-            assert flow["step_id"] == "shade", flow
+            assert flow["step_id"] in ("shade", "shade_prefilled"), flow
             flow = await configure(
                 flow["flow_id"],
                 {

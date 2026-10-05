@@ -55,6 +55,14 @@
           "closed_height": "Closed height"
         }
       },
+      "shade_prefilled": {
+        "title": "{name} (shade {index} of {count})",
+        "description": "Where is this shade's bottom edge (hemline) when fully open and when fully closed? Measure every shade from the same point, such as inches from the floor.\n\nPrefilled from the previous shade.",
+        "data": {
+          "open_height": "Open height",
+          "closed_height": "Closed height"
+        }
+      },
       "travel": {
         "title": "Travel time",
         "description": "How long does {name}, the tallest shade, take to go from fully closed to fully open?\n\nAll shades are assumed to move at the same speed.",

@@ -169,6 +169,22 @@ async def test_unavailable_cover_checked_through_the_registry(
     assert result["errors"] == {"base": "cover_unsupported"}
 
 
+async def test_shades_are_prefilled_from_the_previous_one(
+    hass: HomeAssistant,
+) -> None:
+    result = await submit_group(hass, await start_flow(hass))
+    assert result["step_id"] == "shade"
+    assert prefilled_answers(result) == {}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"open_height": 84, "closed_height": 24}
+    )
+
+    # Shade 2 starts with shade 1's heights, and its description says so.
+    assert result["step_id"] == "shade_prefilled"
+    assert prefilled_answers(result) == {"open_height": 84, "closed_height": 24}
+
+
 async def test_shade_heights_validated(hass: HomeAssistant) -> None:
     flow = await start_flow(hass)
     result = await submit_group(hass, flow)
