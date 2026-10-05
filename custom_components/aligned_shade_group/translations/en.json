@@ -10,7 +10,7 @@
         "sections": {
           "pico": {
             "name": "Pico remote (optional)",
-            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
+            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, and the Pico won't appear in the list below until they're enabled. Enable them on the Pico's device page first.",
             "data": {
               "device_id": "Pico"
             },
@@ -33,7 +33,7 @@
         "sections": {
           "pico": {
             "name": "Pico remote (optional)",
-            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
+            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, and the Pico won't appear in the list below until they're enabled. Enable them on the Pico's device page first.",
             "data": {
               "device_id": "Pico"
             },

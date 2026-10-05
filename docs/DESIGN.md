@@ -82,7 +82,8 @@ of its On, Stop and Off buttons (`open`, `stop`, `close`), found by
 `pico.py`: the Caseta integration names each button entity after the Pico,
 ending in the button's name (not Raise or Lower, which nudge shades). The
 form rejects a Pico without all three, or with any of them disabled (Caseta
-disables them by default). Storing the buttons keeps the settings readable
+disables them by default; with all of them disabled, the device selector
+doesn't offer the Pico at all). Storing the buttons keeps the settings readable
 and means only the form depends on Caseta's naming; like the shades, they're
 stored by entity id, so renaming one means editing the group. Editing
 suggests the device the stored buttons are on.
