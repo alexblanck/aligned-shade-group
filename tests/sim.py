@@ -449,7 +449,7 @@ class Room:
     async def add_controls(self, flow: Any) -> Any:
         """On the Picos and scenes menu, add the room's Pico and scenes."""
         configure = self.hass.config_entries.flow.async_configure
-        assert flow["step_id"] in ("controls", "controls_suggested"), flow
+        assert flow["step_id"] in CONTROLS_MENUS, flow
         if self.pico:
             flow = await self.choose(flow, "add_pico")
             flow = await configure(
@@ -467,7 +467,7 @@ class Room:
                     "position": position_pct,
                 },
             )
-        assert flow["step_id"] in ("controls", "controls_suggested"), flow
+        assert flow["step_id"] in CONTROLS_MENUS, flow
         return flow
 
     async def command(self, service: str, **data: Any) -> None:
@@ -548,6 +548,10 @@ class Room:
 # 0.1 s tick (up to about 0.5 in for a roller near the top of its travel), plus
 # whole-percent position rounding.
 HEIGHT_TOLERANCE = 1.0
+
+# The Picos and scenes menu's variants (with nothing configured, with some
+# configured, and with some configured and more suggested).
+CONTROLS_MENUS = ("controls", "controls_configured", "controls_configured_suggested")
 
 
 def same_tops() -> list[ShadeSpec]:

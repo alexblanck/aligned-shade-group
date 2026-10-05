@@ -133,13 +133,14 @@ def _control_shades_selector(entity_ids: list[str]) -> selector.EntitySelector:
 def _add_pico_schema(entity_ids: list[str]) -> vol.Schema:
     return vol.Schema(
         {
-            vol.Required(FIELD_PICO_DEVICE): selector.DeviceSelector(
+            # Optional, so leaving it empty goes back instead of being refused.
+            vol.Optional(FIELD_PICO_DEVICE): selector.DeviceSelector(
                 selector.DeviceSelectorConfig(
                     integration="lutron_caseta",
                     entity=[selector.EntityFilterSelectorConfig(domain="button")],
                 )
             ),
-            vol.Required(FIELD_SHADES): _control_shades_selector(entity_ids),
+            vol.Optional(FIELD_SHADES): _control_shades_selector(entity_ids),
         }
     )
 
@@ -149,15 +150,15 @@ def _add_scene_schema(entity_ids: list[str]) -> vol.Schema:
         {
             # Lutron scenes, which the bridge runs as one command; a Home
             # Assistant scene would command each shade separately.
-            vol.Required(FIELD_SCENE): selector.EntitySelector(
+            vol.Optional(FIELD_SCENE): selector.EntitySelector(
                 selector.EntitySelectorConfig(
                     filter=selector.EntityWithDeviceFilterSelectorConfig(
                         domain="scene", integration="lutron_caseta"
                     )
                 )
             ),
-            vol.Required(FIELD_SHADES): _control_shades_selector(entity_ids),
-            vol.Required(FIELD_SCENE_POSITION): selector.NumberSelector(
+            vol.Optional(FIELD_SHADES): _control_shades_selector(entity_ids),
+            vol.Optional(FIELD_SCENE_POSITION, default=100): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0, max=100, step=1, unit_of_measurement="%"
                 )
@@ -446,10 +447,18 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             options += ["change_control", "remove_controls"]
         options.append("save")
         suggestions = _suggested_starts(self._shades_to_save, self._controls)
+        # Variants of the menu whose descriptions add the "Suggested" and
+        # "Configured" sections they need (separate steps, so their headings
+        # are translated). With nothing added, all the shades are always
+        # suggested.
+        if not self._controls:
+            step_id = "controls"
+        elif suggestions:
+            step_id = "controls_configured_suggested"
+        else:
+            step_id = "controls_configured"
         return self.async_show_menu(
-            # With suggestions, a variant whose description introduces them (a
-            # separate step, so that text is translated).
-            step_id="controls_suggested" if suggestions else "controls",
+            step_id=step_id,
             menu_options=options,
             description_placeholders={
                 "suggestions": "".join(
@@ -464,15 +473,20 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async_step_controls_suggested = async_step_controls
+    async_step_controls_configured = async_step_controls
+    async_step_controls_configured_suggested = async_step_controls
 
     async def async_step_add_pico(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Add a Pico paired to some of the shades, or change one."""
+        """Add a Pico paired to some of the shades, or change one. With no
+        Pico chosen, go back.
+        """
         errors: dict[str, str] = {}
         if user_input is not None:
-            shades = user_input[FIELD_SHADES]
+            if not user_input.get(FIELD_PICO_DEVICE):
+                return await self.async_step_controls()
+            shades = user_input.get(FIELD_SHADES, [])
             try:
                 buttons = find_pico_buttons(self.hass, user_input[FIELD_PICO_DEVICE])
             except PicoButtonsError as err:
@@ -518,11 +532,13 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Add a Lutron scene that sets some of the shades to a position, or
-        change one.
+        change one. With no scene chosen, go back.
         """
         errors: dict[str, str] = {}
         if user_input is not None:
-            shades = user_input[FIELD_SHADES]
+            if not user_input.get(FIELD_SCENE):
+                return await self.async_step_controls()
+            shades = user_input.get(FIELD_SHADES, [])
             if split_entity_id(user_input[FIELD_SCENE])[0] != Platform.SCENE:
                 errors["base"] = "not_a_scene"
             elif any(

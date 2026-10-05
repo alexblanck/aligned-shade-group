@@ -27,6 +27,7 @@ from custom_components.aligned_shade_group.const import (
 
 from .common import HIGH_SILL, LOW_SILL
 from .sim import (
+    CONTROLS_MENUS,
     GROUP,
     HEIGHT_TOLERANCE,
     build_room,
@@ -76,7 +77,7 @@ async def reach_controls(hass: HomeAssistant) -> dict[str, Any]:
     result = await configure(
         result["flow_id"], {"travel_time_s": 36, "roller_curve": {}}
     )
-    assert result["step_id"] in ("controls", "controls_suggested")
+    assert result["step_id"] in CONTROLS_MENUS
     return result
 
 
@@ -156,7 +157,7 @@ async def test_picos_and_scenes_are_stored_with_their_shades(
     # A Pico paired to the low-sill shade only, and a scene opening both.
     pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
     result = await add_pico_answers(hass, result, pico, [LOW_SILL])
-    assert result["step_id"] in ("controls", "controls_suggested")
+    assert result["step_id"] in CONTROLS_MENUS
     assert "Living Room Pico" in result["description_placeholders"]["controls"]
     result = await choose(hass, result, "add_scene")
     result = await hass.config_entries.flow.async_configure(
@@ -262,7 +263,7 @@ async def test_menu_suggests_shades_that_start_level_together(
     # level whenever the group leaves a level position (or open), so a Pico or
     # scene for both is suggested in each direction until one covers them.
     result = await reach_controls(hass)
-    assert result["step_id"] == "controls_suggested"
+    assert result["step_id"] == "controls"
     assert result["description_placeholders"]["suggestions"] == (
         f"\n- ↑ {HIGH_SILL}, {LOW_SILL}\n- ↓ {HIGH_SILL}, {LOW_SILL}"
     )
@@ -273,12 +274,13 @@ async def test_menu_suggests_shades_that_start_level_together(
         result["flow_id"],
         {"scene": "scene.open_both", "shades": [HIGH_SILL, LOW_SILL], "position": 100},
     )
+    assert result["step_id"] == "controls_configured_suggested"
     assert result["description_placeholders"]["suggestions"] == (
         f"\n- ↓ {HIGH_SILL}, {LOW_SILL}"
     )
     pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
     result = await add_pico_answers(hass, result, pico, [HIGH_SILL, LOW_SILL])
-    assert result["step_id"] == "controls"
+    assert result["step_id"] == "controls_configured"
 
 
 async def test_living_room_all_suggests_opening_the_four_identical_shades(
@@ -294,7 +296,7 @@ async def test_living_room_all_suggests_opening_the_four_identical_shades(
     )
     flow = await room.answer_shade_steps(flow)
 
-    assert flow["step_id"] == "controls_suggested"
+    assert flow["step_id"] == "controls_configured_suggested"
     assert flow["description_placeholders"]["suggestions"] == (
         "\n- ↑ left_2, right_3, right_4, right_5"
     )
@@ -326,6 +328,17 @@ async def test_scene_with_different_positions_cannot_be_changed(
     )
     assert flow["step_id"] == "change_control"
     assert flow["errors"] == {"base": "scene_positions_differ"}
+
+
+async def test_leaving_the_pico_or_scene_empty_goes_back(
+    hass: HomeAssistant,
+) -> None:
+    configure = hass.config_entries.flow.async_configure
+    for option in ("add_pico", "add_scene"):
+        result = await choose(hass, await reach_controls(hass), option)
+        result = await configure(result["flow_id"], {"shades": [HIGH_SILL]})
+        assert result["step_id"] == "controls", option
+        assert result["description_placeholders"]["controls"] == ""
 
 
 async def test_controls_need_shades_and_a_scene(hass: HomeAssistant) -> None:
@@ -487,7 +500,7 @@ async def test_halfway_height_extends_to_shades_above_the_tallest(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"travel_time_s": 30, "roller_curve": {"halfway_height": 48}}
     )
-    assert result["step_id"] in ("controls", "controls_suggested")
+    assert result["step_id"] in CONTROLS_MENUS
 
 
 async def test_halfway_height_whose_curve_cannot_reach_every_shade(
