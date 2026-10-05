@@ -638,6 +638,7 @@ async def test_diagnostics_mid_run(
     # The Pico's buttons, found from its device.
     assert group["controls"] == [
         {
+            "type": "pico",
             "shades": [HIGH_SILL, LOW_SILL],
             "open": "button.pico_open",
             "stop": "button.pico_stop",
@@ -802,6 +803,65 @@ async def test_living_room_all_stops_level(
     assert room.pico["stop"].presses == 1
     assert all(0 < pct < 100 for pct in room.positions_pct_by_id().values())
     assert room.group.attributes["aligned"] is True
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
+# A Lutron scene opening the four identical shades (all but left_1).
+IDENTICAL = ["cover.left_2", "cover.right_3", "cover.right_4", "cover.right_5"]
+OPEN_IDENTICAL = "scene.lutron_bridge_open_identical_shades"
+
+
+async def build_living_room_all_with_scene(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> Room:
+    return await build_room(
+        hass,
+        freezer,
+        living_room_all(),
+        scenes={OPEN_IDENTICAL.removeprefix("scene."): dict.fromkeys(IDENTICAL, 100)},
+    )
+
+
+async def test_living_room_all_opens_with_the_scene(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_living_room_all_with_scene(hass, freezer)
+
+    # Closed, the four identical shades are level but left_1 isn't, so the
+    # five-shade Pico can't be used. The scene starts the four at one instant,
+    # with no commands of their own, and left_1 joins when they reach it.
+    await room.command("open_cover")
+    await room.run_until_still()
+
+    assert room.scenes[OPEN_IDENTICAL].activations == 1
+    assert room.pico["open"].presses == 0
+    assert len({room[eid].starts[0][0] for eid in IDENTICAL}) == 1
+    assert all(room[eid].commanded == [] for eid in IDENTICAL)
+    left_1_delay = room["cover.left_1"].starts[0][0] - room["cover.left_2"].starts[0][0]
+    assert left_1_delay == pytest.approx(8, abs=0.5)
+    assert set(room.positions_pct_by_id().values()) == {100}
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
+async def test_living_room_all_goes_to_half_with_the_scene(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_living_room_all_with_scene(hass, freezer)
+
+    # The scene still starts the four at once, though it sends them to 100%:
+    # each is then sent 50% straight away.
+    await room.command("set_cover_position", position=50)
+    await room.run_until_still()
+
+    assert room.scenes[OPEN_IDENTICAL].activations == 1
+    assert len({room[eid].starts[0][0] for eid in IDENTICAL}) == 1
+    assert all(room[eid].commanded == [50] for eid in IDENTICAL)
+    left_1_delay = room["cover.left_1"].starts[0][0] - room["cover.left_2"].starts[0][0]
+    assert left_1_delay == pytest.approx(8, abs=0.5)
+    positions = room.positions_pct_by_id()
+    assert {positions[eid] for eid in IDENTICAL} == {50}
+    assert 0 < positions["cover.left_1"] < 50
+    assert room.group.attributes["current_position"] == 50
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 

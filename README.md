@@ -4,8 +4,8 @@
 
 A Home Assistant cover group for side-by-side window shades of different
 sizes: one cover whose bottom edges (hemlines) stay level — at rest and while
-moving. Optionally drives a Lutron Caseta Pico so every shade starts and stops
-at exactly the same moment.
+moving. Optionally uses Lutron Caseta Picos and scenes so shades start (and
+stop) at exactly the same moment.
 
 "Shades" means any window covering that raises and lowers with a position,
 such as roller or cellular shades or blinds; the optional roller-curve
@@ -54,11 +54,11 @@ Other shades that work the same way should work too, but haven't been tested.
   own range).
 - When shades start from different heights, the lowest (or highest) one starts
   first and the others join as its hemline reaches theirs.
-- With a Pico configured, movements that start from a level hemline begin with
-  a Pico press, and stops while moving go through the Pico, so the bridge
-  starts and stops every shade in lockstep. (A shade Pico's middle button
-  sends stationary shades to their favorite position, so it's only pressed
-  while the group is moving.)
+- Shades that start level start together: with a Pico press or scene where
+  one covers them, so the bridge starts them in lockstep, and stops while
+  moving go through the Picos. (A shade Pico's middle button sends
+  stationary shades to their favorite position, so it's only pressed while
+  the group is moving.)
 
 See [docs/DESIGN.md](docs/DESIGN.md) for details.
 
@@ -69,15 +69,24 @@ See [docs/DESIGN.md](docs/DESIGN.md) for details.
 3. Settings → Devices & services → Add integration → **Aligned Shade Group**.
    Each group gets its own device, which you can assign to an area.
 
-## Pico setup (optional)
+## Picos and scenes (optional)
 
-1. In the Lutron app, pair a Pico to **exactly** the shades in the group.
-2. In Home Assistant, open the Pico's device (Lutron Caseta integration) and
-   enable its **On**, **Stop** and **Off** button entities, which are
-   disabled by default. Until they're enabled, the Pico isn't offered in the
-   group's **Pico remote** list.
-3. When creating the group, choose the Pico in the **Pico remote** section.
-   The group finds its On (up), Stop and Off (down) buttons itself.
+A Pico or Lutron scene starts several shades with one command, so they start
+at exactly the same moment. When some of the group's shades start level, the
+group uses any Pico or scene that covers just those shades, and commands the
+rest itself. They're added on the last screen of the group's setup (or
+Reconfigure).
+
+- **Pico:** pair it in the Lutron app to some or all of the group's shades.
+  In Home Assistant, open the Pico's device (Lutron Caseta integration) and
+  enable its **On**, **Stop** and **Off** button entities, which are disabled
+  by default; until they're enabled, the Pico isn't offered. Then choose the
+  Pico and the shades it's paired to. The group finds its buttons itself, and
+  also uses its Stop button to stop them.
+- **Scene:** a Lutron scene that sets some of the shades to one position (for
+  example, opens them). Choose the scene, its shades and that position. Use
+  only scenes that move nothing else. Scenes start shades but can't stop
+  them.
 
 ## Attributes
 
@@ -96,8 +105,9 @@ group's device page) saves a JSON file with the group's settings, the heights
 and speeds it derived from them, each shade's position and hemline height, and
 the plan being run, if any. Attach it when reporting a problem.
 
-Turn on debug logging to see each plan the group makes: whether it used the
-Pico (and why not), every shade command with its delay, and stops. Use **Enable
+Turn on debug logging to see each plan the group makes: which Picos and
+scenes it used (and why not the others), every shade command with its delay,
+and stops. Use **Enable
 debug logging** on the integration's page, or for logging that survives
 restarts:
 

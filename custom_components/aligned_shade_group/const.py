@@ -17,21 +17,24 @@ CONF_TRAVEL_TIME_S = "travel_time_s"
 CONF_HALFWAY_HEIGHT = "halfway_height"
 
 # Ways to start several shades at once through the bridge, each with its
-# `type` (CONF_TYPE, a ControlType) and the shades (CONF_SHADES) it moves.
-# Only Picos so far, with the button entities found from the Pico chosen in the
-# setup form.
+# `type` (CONF_TYPE, a ControlType). A Pico has the shades it's paired to
+# (CONF_SHADES) and its button entities, found from the Pico chosen in the
+# setup form. A scene has its entity (CONF_ENTITY_ID) and the position it sets
+# each of its shades to (CONF_SCENE_POSITIONS, by entity id).
 CONF_CONTROLS = "controls"
 CONF_PICO_OPEN = "open"
 CONF_PICO_STOP = "stop"
 CONF_PICO_CLOSE = "close"
+CONF_SCENE_POSITIONS = "positions"
 
 
 class ControlType(StrEnum):
     """Values of a control's CONF_TYPE."""
 
     PICO = "pico"
+    SCENE = "scene"
 
 
 def missing_entities_issue_id(entry_id: str) -> str:
-    """The repair issue raised when a group's shades or Pico buttons are missing."""
+    """The repair issue raised when a group's shades or controls are missing."""
     return f"entities_missing_{entry_id}"

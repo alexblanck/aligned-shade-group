@@ -54,7 +54,9 @@ everything else is stored in its data:
   ],
   "controls": [
     {"type": "pico", "shades": ["cover.left_1", "cover.left_2"],
-     "open": "button.pico_on", "stop": "button.pico_stop", "close": "button.pico_off"}
+     "open": "button.pico_on", "stop": "button.pico_stop", "close": "button.pico_off"},
+    {"type": "scene", "entity_id": "scene.open_left_2",
+     "positions": {"cover.left_2": 100}}
   ]
 }
 ```
@@ -75,24 +77,27 @@ time; editing the group asks again, suggesting the previous answers only if
 the same shade is still the tallest. Storing them with a shade also leaves
 room for mismatched rolls, where each shade would have its own.
 
-Each control has a `type` and the `shades` it moves, which may be only some of
-the group's (a Pico paired to two of three windows, say). Today the only type
-is `pico`. The setup form asks for the Pico device and stores the entity ids
-of its On, Stop and Off buttons (`open`, `stop`, `close`), found by
-`pico.py`: the Caseta integration names each button entity after the Pico,
-ending in the button's name (not Raise or Lower, which nudge shades). The
-form rejects a Pico without all three, or with any of them disabled (Caseta
-disables them by default; with all of them disabled, the device selector
-doesn't offer the Pico at all). Storing the buttons keeps the settings readable
-and means only the form depends on Caseta's naming; like the shades, they're
-stored by entity id, so renaming one means editing the group. Editing
-suggests the device the stored buttons are on.
+Controls are Picos and Lutron scenes, added on the flow's last screen (a menu:
+add a Pico, add a scene, remove all, done). Each moves some of the group's
+shades, possibly not all of them.
 
-The setup form only offers one Pico, paired to every shade, and the planner
-uses only such a Pico. The list leaves room for Picos paired to subsets of the
-shades, and for Lutron scenes (`"type": "scene"` with each shade's scene
-position): pressing or activating one starts its shades together, and
-follow-up `set_position` commands retarget any that should stop elsewhere.
+- A **Pico** stores the shades it's paired to and the entity ids of its On,
+  Stop and Off buttons (`open`, `stop`, `close`). The form asks for the Pico
+  device and finds them with `pico.py`: the Caseta integration names each
+  button entity after the Pico, ending in the button's name (not Raise or
+  Lower, which nudge shades). The form rejects a Pico without all three, or
+  with any of them disabled (Caseta disables them by default; with all of
+  them disabled, the device selector doesn't offer the Pico at all). Storing
+  the buttons keeps the settings readable and means only the form depends on
+  Caseta's naming; like the shades, they're stored by entity id, so renaming
+  one means editing the group.
+- A **scene** stores its entity id and the position it sets each of its
+  shades to (the form takes one position for all of them). The form offers
+  only Lutron scenes: the bridge runs one as a single command, while a Home
+  Assistant scene would just command each shade separately. A scene should
+  move nothing but these shades, since activating it moves everything in it.
+
+Editing keeps the saved controls whose shades are all still in the group.
 
 Heights use any unit, as long as every shade uses the same reference (e.g.
 inches from the floor). Tops do not need to match, but every shade's range must
@@ -208,19 +213,28 @@ really are.
 A shade still on an earlier move that already sits at its new target
 is sent a command to hold there, otherwise it would carry on to its old target.
 
-**Pico path** — used when a Pico is configured *and* every shade the Pico would
-move (all shades not already at the endpoint in the direction of travel) starts
-from the same hemline. Press Pico open/close, then immediately send
-`set_position` to shades whose target is short of the endpoint.
+**Level groups** — shades moving the same way are grouped by where they
+start: shades whose hemlines are within the alignment tolerance of each other
+(the same 1% of the group's range used for the `aligned` attribute) start
+together, rather than a fraction of a second apart, since whole-percent
+positions can't place them more precisely than that anyway
+(`_level_groups`). Moving up, the lowest group starts first and each other
+group when the leader's estimated hemline reaches it (and vice versa moving
+down).
 
-**Staggered path** — otherwise. Shades moving up start in order from lowest
-hemline; each one starts when the leader's estimated hemline reaches it (and
-vice versa for moving down). Implemented as delayed `set_position` calls.
-Shades whose hemlines are within the alignment tolerance of each other (the
-same 1% of the group's range used for the Pico and the `aligned` attribute)
-start together, rather than a fraction of a second apart: whole-percent
-positions can't place them more precisely than that anyway. This applies to
-any level group in the move, not just the leader's (`_level_groups`).
+**Starters** — each Pico gives two (its On button sends its shades to 100%,
+Off to 0%) and each scene one (its shades to its positions); each starts its
+shades with a single command to the bridge. A starter can start a level group
+when every shade it would move (those not already at its position) is in that
+group and would move the way its move goes; shades it would also move but
+that should stay put, or start elsewhere, rule it out. The planner picks
+starters covering as much of each group as possible, without starting any
+shade twice, and the group's other shades get `set_position`. A shade started
+toward a position that isn't its target (a Pico's endpoint when going
+partway, or a scene's position) is sent its target straight after: a shade
+already moving keeps going and stops at the newly commanded position, whether
+that's short of or beyond where it was heading (verified on Serena shades).
+Everything due at the same moment goes out together, starters first.
 
 Staggered starts: a follower starts once the leader has moved from where it
 started to the follower's hemline; since positions change at a constant rate,
@@ -240,18 +254,22 @@ starting command fails, the plan is abandoned and the error returned to the
 caller.
 
 **Missing devices** — pressing a button that doesn't exist does nothing and
-raises nothing, so the Pico is only used (for a move or a stop) while all three
-of its buttons exist, are enabled and are available; otherwise each shade is
-commanded on its own. Shades or Pico buttons that are disabled, or have neither
+raises nothing, so a Pico or scene is only used (for a move or a stop) while
+its entities exist, are enabled and are available; otherwise its shades are
+commanded on their own. Shades, Pico buttons or scenes that are disabled, or have neither
 a registry entry nor a state (say, renamed or removed), raise a repair issue
 asking to reconfigure the group. It's checked once Home Assistant has started,
 whenever the registry entry of one of the group's entities changes (under its
 old or new id, so renaming one back clears it), and on every move, and it's
 cleared when nothing is missing.
 
-**Stop** — cancel any pending staggered starts, then:
-- Pico configured and the group believes it is moving → press Pico stop.
-- Otherwise → `stop_cover` on each shade.
+**Stop** — cancel any pending starts, then make sure every shade gets a stop,
+since shades may be moving that the plan doesn't know about:
+- While a plan is running, press the Stop of every Pico covering any shade of
+  the plan.
+- `stop_cover` on every shade not covered by a pressed Pico.
+
+Scenes can't stop shades.
 
 On a shade Pico the middle button means "stop" while moving but "go to
 favorite" when stationary, so the Pico stop is only pressed while the group

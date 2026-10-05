@@ -21,6 +21,7 @@ import probatio as vol
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.cover import CoverEntity, CoverEntityFeature
+from homeassistant.components.scene import Scene
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigEntry, ConfigFlow
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -202,6 +203,8 @@ class SimShade(CoverEntity):
         self._last = dt_util.utcnow()
         # (time, target_pct) log of motion starts, for synchronization checks.
         self.starts: list[tuple[float, float]] = []
+        # Positions it was sent with its own set_position command.
+        self.commanded: list[float] = []
 
     @property
     def moving(self) -> bool:
@@ -247,6 +250,7 @@ class SimShade(CoverEntity):
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         await self._bridge.deliver(gated=True)
+        self.commanded.append(kwargs["position"])
         self.go(kwargs["position"])
 
     async def async_open_cover(self, **kwargs: Any) -> None:
@@ -298,6 +302,40 @@ class SimPicoButton(ButtonEntity):
             shade.go(target)
 
 
+class SimScene(Scene):
+    """A Lutron scene: activating it sends its shades to their positions at
+    the same instant, like the bridge does.
+    """
+
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        name: str,
+        positions: dict[str, float],
+        shades: list[SimShade],
+        bridge: Bridge,
+    ) -> None:
+        self.entity_id = f"scene.{name}"
+        self._attr_name = name
+        self._attr_unique_id = f"scene_{name}"
+        self._bridge = bridge
+        self._targets = [
+            (shade, positions[shade.entity_id])
+            for shade in shades
+            if shade.entity_id in positions
+        ]
+        self.activations = 0
+
+    async def async_activate(self, **kwargs: Any) -> None:
+        await self._bridge.deliver()
+        self.activations += 1
+        for shade, _ in self._targets:
+            shade.settle()
+        for shade, target_pct in self._targets:
+            shade.go(target_pct)
+
+
 class Room:
     """The simulated shades, Pico and aligned group under test."""
 
@@ -316,6 +354,9 @@ class Room:
         self._configured_travel_time_s = configured_travel_time_s
         self.shades = {shade.entity_id: shade for shade in shades}
         self.pico = pico
+        # The shades the Pico is paired to, and the scenes by name.
+        self.pico_shades: list[str] = []
+        self.scenes: dict[str, SimScene] = {}
         self.entry: MockConfigEntry | None = None
         # Snapshot of every shade's hemline at every tick.
         self.history: list[dict[str, float]] = []
@@ -335,12 +376,12 @@ class Room:
         flow = await self.hass.config_entries.flow.async_init(
             DOMAIN, context={"source": "user"}
         )
-        pico = {"device_id": self.pico_device_id()} if self.pico else {}
-        group_input = {"name": "Living Room", "shades": list(self.shades), "pico": pico}
         flow = await self.hass.config_entries.flow.async_configure(
-            flow["flow_id"], group_input
+            flow["flow_id"], {"name": "Living Room", "shades": list(self.shades)}
         )
         flow = await self.answer_shade_steps(flow)
+        flow = await self.add_controls(flow)
+        flow = await self.choose(flow, "save")
         assert flow["type"] == "create_entry", flow
         await self.hass.async_block_till_done()
         self.entry = self.hass.config_entries.async_entries(DOMAIN)[0]
@@ -385,6 +426,37 @@ class Room:
         else:
             answers["roller_curve"] = {}
         return await configure(flow["flow_id"], answers)
+
+    async def choose(self, flow: Any, option: str) -> Any:
+        """Pick an option on a menu screen."""
+        assert flow["type"] == "menu", flow
+        return await self.hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"next_step_id": option}
+        )
+
+    async def add_controls(self, flow: Any) -> Any:
+        """On the Picos and scenes menu, add the room's Pico and scenes."""
+        configure = self.hass.config_entries.flow.async_configure
+        assert flow["step_id"] == "controls", flow
+        if self.pico:
+            flow = await self.choose(flow, "add_pico")
+            flow = await configure(
+                flow["flow_id"],
+                {"device_id": self.pico_device_id(), "shades": self.pico_shades},
+            )
+        for scene in self.scenes.values():
+            (position_pct,) = {target_pct for _, target_pct in scene._targets}
+            flow = await self.choose(flow, "add_scene")
+            flow = await configure(
+                flow["flow_id"],
+                {
+                    "scene": scene.entity_id,
+                    "shades": [shade.entity_id for shade, _ in scene._targets],
+                    "position": position_pct,
+                },
+            )
+        assert flow["step_id"] == "controls", flow
+        return flow
 
     async def command(self, service: str, **data: Any) -> None:
         """Call a cover service on the group."""
@@ -524,15 +596,19 @@ class _PicoEntryFlow(ConfigFlow):
     VERSION = 1
 
 
-async def _async_add_pico(hass: HomeAssistant, buttons: list[SimPicoButton]) -> None:
-    """Add the Pico's buttons as a mock Caseta integration would.
+async def _async_add_bridge(
+    hass: HomeAssistant, buttons: list[SimPicoButton], scenes: list[SimScene]
+) -> None:
+    """Add the Pico's buttons and the scenes as a mock Caseta integration would.
 
-    They're set up from a config entry, as devices need one, so they belong to
-    a Pico device like real Caseta buttons do.
+    They're set up from a config entry, as devices need one, so the buttons
+    belong to a Pico device like real Caseta buttons do.
     """
 
     async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-        await hass.config_entries.async_forward_entry_setups(entry, [Platform.BUTTON])
+        await hass.config_entries.async_forward_entry_setups(
+            entry, [Platform.BUTTON, Platform.SCENE]
+        )
         return True
 
     async def async_setup_buttons(
@@ -542,6 +618,13 @@ async def _async_add_pico(hass: HomeAssistant, buttons: list[SimPicoButton]) -> 
     ) -> None:
         async_add_entities(buttons)
 
+    async def async_setup_scenes(
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        async_add_entities: AddConfigEntryEntitiesCallback,
+    ) -> None:
+        async_add_entities(scenes)
+
     mock_integration(
         hass, MockModule("lutron_caseta", async_setup_entry=async_setup_entry)
     )
@@ -550,6 +633,11 @@ async def _async_add_pico(hass: HomeAssistant, buttons: list[SimPicoButton]) -> 
         hass,
         "lutron_caseta.button",
         MockPlatform(async_setup_entry=async_setup_buttons),
+    )
+    mock_platform(
+        hass,
+        "lutron_caseta.scene",
+        MockPlatform(async_setup_entry=async_setup_scenes),
     )
     entry = MockConfigEntry(domain="lutron_caseta")
     entry.add_to_hass(hass)
@@ -565,11 +653,15 @@ async def build_room(
     configured_travel_time_s: float | None = None,
     *,
     start_pct: float | Mapping[str, float] | None = None,
+    scenes: Mapping[str, Mapping[str, float]] | None = None,
 ) -> Room:
-    """Set up simulated shades (and Pico), then the group via its config flow.
+    """Set up simulated shades (and Pico and scenes), then the group via its
+    config flow, adding the Pico and scenes as its controls.
 
     `pico` is True for a Pico paired to every shade, or the entity ids of the
-    shades it's paired to.
+    shades it's paired to. `scenes` maps each Lutron scene's name to the
+    position it sets each of its shades to (by entity id; one position for
+    all, as the setup form sets).
 
     `start_pct` is where the shades start, in percent (0 closed, 100 open):
 
@@ -603,8 +695,18 @@ async def build_room(
             role: SimPicoButton(role, paired, bridge)
             for role in ("open", "stop", "close")
         }
-        await _async_add_pico(hass, list(buttons.values()))
+    sim_scenes = [
+        SimScene(name, dict(positions), shades, bridge)
+        for name, positions in (scenes or {}).items()
+    ]
+    if buttons or sim_scenes:
+        await _async_add_bridge(
+            hass, list(buttons.values()) if buttons else [], sim_scenes
+        )
     await hass.async_block_till_done()
     room = Room(hass, freezer, shades, buttons, bridge, configured_travel_time_s)
+    if buttons:
+        room.pico_shades = [shade.entity_id for shade in paired]
+    room.scenes = {scene.entity_id: scene for scene in sim_scenes}
     await room.add_group()
     return room

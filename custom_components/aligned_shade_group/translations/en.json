@@ -7,18 +7,6 @@
           "name": "Name",
           "shades": "Shades"
         },
-        "sections": {
-          "pico": {
-            "name": "Pico remote (optional)",
-            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, and the Pico won't appear in the list below until they're enabled. Enable them on the Pico's device page first.",
-            "data": {
-              "device_id": "Pico"
-            },
-            "data_description": {
-              "device_id": "Its On, Stop and Off buttons are found automatically."
-            }
-          }
-        },
         "data_description": {
           "name": "For example, “Living Room Aligned”.",
           "shades": "The side-by-side shades to keep level. If one is missing, check its “Show as” in its entity settings."
@@ -29,18 +17,6 @@
         "data": {
           "name": "Name",
           "shades": "Shades"
-        },
-        "sections": {
-          "pico": {
-            "name": "Pico remote (optional)",
-            "description": "Paired Picos can start and stop grouped shades at the exact same time, keeping the hemlines level more precisely than sending each shade its own command.\n\nTo use this, pair a Lutron shade Pico (with a middle button) on the Caseta bridge with exactly these shades. Its On, Stop and Off buttons are disabled in Home Assistant by default, and the Pico won't appear in the list below until they're enabled. Enable them on the Pico's device page first.",
-            "data": {
-              "device_id": "Pico"
-            },
-            "data_description": {
-              "device_id": "Its On, Stop and Off buttons are found automatically."
-            }
-          }
         },
         "data_description": {
           "name": "Renames the group's device and, unless you've renamed it, its entity.",
@@ -84,6 +60,36 @@
             }
           }
         }
+      },
+      "controls": {
+        "title": "Picos and scenes",
+        "description": "A Pico or Lutron scene starts several shades with one command, so they start at exactly the same moment. When some of the group's shades start level, the group uses any Pico or scene covering just those shades, and commands the rest itself.{controls}",
+        "menu_options": {
+          "add_pico": "Add a Pico",
+          "add_scene": "Add a scene",
+          "clear_controls": "Remove all Picos and scenes",
+          "save": "Done"
+        }
+      },
+      "add_pico": {
+        "title": "Add a Pico",
+        "description": "A shade Pico (with a middle button) paired on the Caseta bridge. Its On, Stop and Off buttons are disabled in Home Assistant by default, so enable them on the Pico's device page first.",
+        "data": {
+          "device_id": "Pico",
+          "shades": "Shades it's paired to"
+        },
+        "data_description": {
+          "device_id": "Its On, Stop and Off buttons are found automatically."
+        }
+      },
+      "add_scene": {
+        "title": "Add a scene",
+        "description": "A Lutron scene that moves some of these shades, all to the same position. Use only a scene that moves nothing else: activating it moves everything in it.",
+        "data": {
+          "scene": "Scene",
+          "shades": "Shades it moves",
+          "position": "Position it sets them to"
+        }
       }
     },
     "error": {
@@ -94,7 +100,10 @@
       "halfway_out_of_range": "That's outside the heights a roller shade can have at 50%; check the measurement and the open and closed heights.",
       "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements.",
       "pico_not_a_shade_pico": "That device doesn't have On, Stop and Off buttons. Choose a shade Pico with a middle button.",
-      "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default)."
+      "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default).",
+      "no_control_shades": "Choose at least one shade.",
+      "control_shades_not_in_group": "Choose only shades in this group.",
+      "not_a_scene": "Choose a scene."
     },
     "abort": {
       "reconfigure_successful": "Saved. The group has been reloaded with its new settings."
