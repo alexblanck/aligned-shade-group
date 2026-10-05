@@ -7,7 +7,6 @@ from typing import Any
 import probatio as vol
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.components.cover import CoverEntityFeature
-from homeassistant.components.scene.const import DOMAIN as SCENE_DOMAIN
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     ConfigFlow,
@@ -19,6 +18,7 @@ from homeassistant.const import (
     CONF_ENTITY_ID,
     CONF_TYPE,
     STATE_UNAVAILABLE,
+    Platform,
 )
 from homeassistant.core import HomeAssistant, split_entity_id
 from homeassistant.data_entry_flow import section
@@ -455,7 +455,7 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             shades = user_input[FIELD_SHADES]
-            if split_entity_id(user_input[FIELD_SCENE])[0] != SCENE_DOMAIN:
+            if split_entity_id(user_input[FIELD_SCENE])[0] != Platform.SCENE:
                 errors["base"] = "not_a_scene"
             elif error := self._check_control_shades(shades):
                 errors["base"] = error

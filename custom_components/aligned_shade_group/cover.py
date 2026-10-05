@@ -23,7 +23,6 @@ from homeassistant.components.cover import (
 from homeassistant.components.cover import (
     DOMAIN as COVER_DOMAIN,
 )
-from homeassistant.components.scene.const import DOMAIN as SCENE_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -33,6 +32,7 @@ from homeassistant.const import (
     SERVICE_STOP_COVER,
     SERVICE_TURN_ON,
     STATE_UNAVAILABLE,
+    Platform,
 )
 from homeassistant.core import (
     CALLBACK_TYPE,
@@ -740,8 +740,8 @@ class AlignedShadeGroup(CoverEntity):
     async def _async_fire(self, starter: Starter) -> None:
         """Press a Pico button or activate a scene."""
         name = starter.name
-        if split_entity_id(name)[0] == SCENE_DOMAIN:
-            took_s = await self._async_call(SCENE_DOMAIN, SERVICE_TURN_ON, name)
+        if split_entity_id(name)[0] == Platform.SCENE:
+            took_s = await self._async_call(Platform.SCENE, SERVICE_TURN_ON, name)
             _LOGGER.debug("%s: activated %s (%.3fs)", self.entity_id, name, took_s)
         else:
             await self._async_press(name)
