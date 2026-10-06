@@ -190,13 +190,13 @@ class Plan:
 
     Running a plan carries out its moves. `moves` has one per shade, sorted by
     start delay. A shade already at its target gets a "hold" move (start
-    equals target): one still heading to an earlier target stops there, and
-    one that's still is sent its position again, as a shade's own
-    `set_position` would (it re-seats the shade on the bridge, which realigns
-    one that's drifted), by a starter the plan fires anyway that sends it
-    there, else by a command. At each start delay, fire the starters of that
-    moment's moves, each once, then send the commands for moves that need
-    one.
+    equals target). If it's still heading to an earlier target, it's sent
+    this one to stop there. If it isn't moving, it's sent its position again,
+    as a shade's own `set_position` would be (that re-seats it on the bridge,
+    realigning it if it's drifted): by a starter the plan fires anyway, if
+    one sends it there, else by a command. At each start delay, fire the
+    starters of that moment's moves, each once, then send the commands for
+    moves that need one.
 
     A plan is its moves, not its starts (each listing the moves it begins):
     most questions are about one shade (where is it heading, where is it now,
@@ -410,8 +410,8 @@ def _level_groups(moves: list[Move], tolerance_height: float) -> list[list[Move]
 
 
 def _resend(hold: Move, fired: Iterable[tuple[Starter, float]]) -> Move:
-    """A still shade's hold move, re-sent by a fired starter that sends it
-    to its position anyway rather than by a command of its own, if any.
+    """Hand a still shade's hold to a fired starter that sends it to that
+    position anyway, so it needs no command of its own; else keep it.
     """
     for starter, delay_s in fired:
         if starter.targets.get(hold.shade.entity_id) == hold.target_pct:

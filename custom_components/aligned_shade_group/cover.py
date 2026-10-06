@@ -863,8 +863,8 @@ class AlignedShadeGroup(CoverEntity):
                 for name, starter in starters.items()
             )
         )
-        # The bridge takes commands one at a time: shades starting to move go
-        # first, then the ones already where they should be.
+        # The bridge takes commands one at a time, so shades starting to move
+        # go first, then stops for held shades, then shades already in place.
         commands = [move for move in due if move.needs_command]
         await self._async_set_positions(
             [move for move in commands if move.from_pct != move.target_pct], tag

@@ -212,7 +212,8 @@ async def test_reverse_holds_a_shade_that_starts_later(
     await room.run_until_still()
 
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 5}
-    # It stops rising once the bridge gets to its stop (two slow commands).
+    # It stops rising once the bridge gets to its stop, after high_sill's
+    # command.
     low_sill_pcts = [snapshot[LOW_SILL] for snapshot in room.history]
     assert max(low_sill_pcts[reversed_at:]) <= low_sill_pcts[reversed_at - 1] + 3
     assert room.misalignment(room.history[-1]) <= HEIGHT_TOLERANCE
@@ -400,9 +401,9 @@ async def test_scene_doesnt_undo_a_picos_start(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     # Level at 30% and 41%, closing together. A Pico paired to high_sill
-    # closes it; the scene would close low_sill and leave high_sill at 30%.
-    # Fired together, the scene would send high_sill back to 30% after the
-    # Pico had started it, so they can't both be used.
+    # would start it; the scene would start low_sill and leave high_sill at
+    # 30%. Fired together, the scene would send high_sill back to 30% after
+    # the Pico had started it, so they can't both be used.
     room = await build_room(
         hass,
         freezer,
