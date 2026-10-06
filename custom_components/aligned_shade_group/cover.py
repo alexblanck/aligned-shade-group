@@ -279,9 +279,20 @@ class AlignedShadeGroup(CoverEntity):
 
     @callback
     def _async_member_changed(self, event: Event[EventStateChangedData]) -> None:
+        entity_id = event.data["entity_id"]
+        before_pct = self._positions_pct_by_id.get(entity_id)
         self._update_positions()
         if self._moving:
-            self._check_for_outside_command(event.data["entity_id"])
+            position_pct = self._positions_pct_by_id.get(entity_id)
+            if position_pct != before_pct:
+                _LOGGER.debug(
+                    "%s: %s: %s reported %s%%",
+                    self.entity_id,
+                    self._run,
+                    entity_id,
+                    position_pct,
+                )
+            self._check_for_outside_command(entity_id)
         self.async_write_ha_state()
 
     @callback
