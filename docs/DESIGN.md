@@ -249,13 +249,15 @@ care:
   with the same pause as `set_position` (also verified).
 - A starter whose position for a travelling shade is where it's estimated to
   be isn't used: the estimate isn't exact, so it might stop or turn back.
-- Those whose level group starts later are held where they are (sent their
-  estimated position) at the start of the plan; otherwise they'd keep going
-  the old way until their start.
+- Those whose level group starts later are stopped at the start of the plan
+  (`stop_cover`, so they stay just where they are rather than being sent back
+  to an estimate) and held until their start; otherwise they'd keep going the
+  old way until then.
 
-After a Pico's Stop, a shade reports where it actually stopped, which may not
-be the estimate, so anywhere along its last move is accepted as part of the
-plan rather than taken for an outside command. The planner picks
+A shade stopped like this, or by a Pico's Stop, reports where it actually
+stopped, which may not be the estimate, so anywhere along its last move is
+accepted as part of the plan rather than taken for an outside command. The
+planner picks
 starters covering as much of each group as possible, and the group's other
 shades get `set_position`. No two of a group's starters share any of its
 shades, even one a starter would leave where it is: fired together, it could
@@ -264,7 +266,11 @@ toward a position that isn't its target (a Pico's endpoint when going
 partway, or a scene's position) is sent its target straight after: a shade
 already moving keeps going and stops at the newly commanded position, whether
 that's short of or beyond where it was heading (verified on Serena shades).
-Everything due at the same moment goes out together, starters first.
+Everything due at the same moment goes out together: starters first, then
+commands to shades starting to move, then stops for held shades, then shades
+already where they should be. The bridge handles commands one at a time
+(about 0.1 s each), so that order keeps the moving shades' starts closest to
+plan.
 
 Shades already at their target are sent it again at the start, as a shade's
 own `set_position` would be: the bridge moves a shade it believes is already

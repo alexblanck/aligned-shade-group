@@ -7,7 +7,7 @@ import logging
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from functools import partial
 from types import MappingProxyType
@@ -772,12 +772,17 @@ class AlignedShadeGroup(CoverEntity):
                 starter_pct=(
                     move.starter.targets[move.shade.entity_id] if move.starter else None
                 ),
+                # Stopped first (held, or by its Pico's Stop to turn it around),
+                # so it reports wherever it actually stopped.
                 stopped_within=(
                     (old.from_pct, old.target_pct)
-                    if move.delay_s == 0
-                    and move.starter
-                    and move.starter.name in stop_first
-                    and (old := travelling.get(move.shade.entity_id))
+                    if (old := travelling.get(move.shade.entity_id))
+                    and (
+                        move.held
+                        or move.delay_s == 0
+                        and move.starter is not None
+                        and move.starter.name in stop_first
+                    )
                     else None
                 ),
             )
@@ -846,16 +851,26 @@ class AlignedShadeGroup(CoverEntity):
                 for name, starter in starters.items()
             )
         )
+        # The bridge takes commands one at a time: shades starting to move go
+        # first, then the ones already where they should be.
         commands = [move for move in due if move.needs_command]
-        if delay_s == 0:
+        await self._async_set_positions(
+            [move for move in commands if move.from_pct != move.target_pct], tag
+        )
+        if delay_s == 0 and (held := [m.shade.entity_id for m in plan.moves if m.held]):
             # Shades still travelling from the last plan that start later stop
-            # where they are (as estimated) until then.
-            commands += [
-                replace(move, target_pct=move.from_pct)
-                for move in plan.moves
-                if move.held
-            ]
-        await self._async_set_positions(commands, tag)
+            # where they are until then.
+            took_s = await self._async_call(COVER_DOMAIN, SERVICE_STOP_COVER, held)
+            _LOGGER.debug(
+                "%s: %s: stopped %s to hold (%.3fs)",
+                self.entity_id,
+                tag,
+                ", ".join(held),
+                took_s,
+            )
+        await self._async_set_positions(
+            [move for move in commands if move.from_pct == move.target_pct], tag
+        )
 
     async def _async_delayed_start(
         self, plan: Plan, delay_s: float, _now: datetime

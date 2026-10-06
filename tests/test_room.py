@@ -11,6 +11,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.diagnostics import (
     get_diagnostics_for_config_entry,
     get_diagnostics_for_device,
@@ -201,13 +202,22 @@ async def test_reverse_holds_a_shade_that_starts_later(
     await room.command("open_cover")
     await room.run(1)
     reversed_at = len(room.history)
+    # A slow bridge: the stop lands well after the plan's estimate was made.
+    room.bridge.latency_s = 0.3
     await room.command("set_cover_position", position=5)
+    await room.run(2)
+    # Held with a stop, so where it reports stopping (a little past the
+    # estimate) is part of the run, not another command.
+    assert room.group.state == "closing"
     await room.run_until_still()
 
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 5}
+    # It stops rising once the bridge gets to its stop (two slow commands).
     low_sill_pcts = [snapshot[LOW_SILL] for snapshot in room.history]
-    assert max(low_sill_pcts[reversed_at:]) <= low_sill_pcts[reversed_at - 1] + 1
+    assert max(low_sill_pcts[reversed_at:]) <= low_sill_pcts[reversed_at - 1] + 3
     assert room.misalignment(room.history[-1]) <= HEIGHT_TOLERANCE
+    # Stopped, not sent back to its estimated position: only ever its targets.
+    assert room[LOW_SILL].commanded == [100, 5]
 
 
 async def test_retarget_while_moving(
@@ -650,6 +660,22 @@ async def test_pico_also_resends_a_shade_already_there(
     assert room.pico["close"].presses == 1
     assert all(shade.commanded == [] for shade in room.shades.values())
     assert set(room.positions_pct_by_id().values()) == {0}
+
+
+async def test_shades_starting_to_move_are_commanded_first(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # The bridge takes commands one at a time; high_sill, already open, is
+    # only re-sent its position, so low_sill's command goes first.
+    room = await build_room(
+        hass, freezer, same_tops(), False, start_pct={HIGH_SILL: 100, LOW_SILL: 0}
+    )
+    commanded_at = dt_util.utcnow().timestamp()
+
+    await room.command("open_cover")
+
+    (started_at, _), *_ = room[LOW_SILL].starts
+    assert started_at - commanded_at == pytest.approx(room.bridge.latency_s, abs=0.01)
 
 
 async def test_setting_the_current_position_aligns_the_shades(
