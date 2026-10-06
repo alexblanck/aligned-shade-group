@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import math
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
@@ -63,25 +63,30 @@ class Bridge:
     """How the simulated Lutron bridge delivers commands.
 
     `latency_s` is how long each command takes to reach a shade (the clock
-    moves on meanwhile); by default about what a real Caseta bridge takes, so
-    shades commanded together start slightly apart, while a Pico press or
-    scene starts its shades at the same instant. `gate`, when set, holds
-    position commands until the test sets the event. `fail` makes every
-    command raise, like an unreachable bridge.
+    moves on meanwhile); by default about what a real Caseta bridge takes.
+    Like a real one, it handles commands one at a time, so shades commanded
+    together start one latency apart, while a Pico press or scene starts its
+    shades at the same instant. `gate`, when set, holds position commands
+    before they reach the bridge until the test sets the event. `fail` makes
+    every command raise, like an unreachable bridge.
     """
 
     freezer: FrozenDateTimeFactory
     latency_s: float = 0.04
     gate: asyncio.Event | None = None
     fail: bool = False
+    _busy: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def deliver(self, gated: bool = False) -> None:
         if self.fail:
             raise HomeAssistantError("Bridge unreachable")
         if gated and self.gate is not None:
             await self.gate.wait()
-        if self.latency_s:
-            self.freezer.tick(timedelta(seconds=self.latency_s))
+        async with self._busy:
+            if self.latency_s:
+                self.freezer.tick(timedelta(seconds=self.latency_s))
+            # Let commands queued meanwhile wait their turn, as on the bridge.
+            await asyncio.sleep(0)
 
 
 @dataclass(frozen=True)

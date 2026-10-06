@@ -882,6 +882,8 @@ class AlignedShadeGroup(CoverEntity):
         moves = list(moves)
         if not moves:
             return
+        # Sent at once, but the Caseta bridge handles them one at a time, so
+        # each lands about 0.1 s after the last; starters avoid that spread.
         took_s = await asyncio.gather(
             *(
                 self._async_call(
