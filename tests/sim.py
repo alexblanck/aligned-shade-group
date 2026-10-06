@@ -4,10 +4,10 @@ services.
 Shades move over (frozen, manually advanced) time at their travel speed. Like
 Caseta shades, they report their destination as soon as they're commanded, and
 their real position only when stopped. The Pico behaves like a Caseta shade
-Pico paired on the bridge: On/Off send every paired shade to open/closed at
-the same instant, and the middle button stops moving shades but sends
-stationary shades to their favorite position. A Lutron scene sends its shades
-to its positions at the same instant.
+Pico paired on the bridge: while any paired shade is moving, every button
+stops them all; otherwise On/Off send them to open/closed at the same
+instant, and the middle button to their favorite position. A Lutron scene
+sends its shades to its positions at the same instant.
 """
 
 from __future__ import annotations
@@ -292,17 +292,14 @@ class SimPicoButton(ButtonEntity):
         self.presses += 1
         for shade in self._shades:
             shade.settle()
-        if self.role == "open":
-            targets = [100] * len(self._shades)
-        elif self.role == "close":
-            targets = [0] * len(self._shades)
-        elif any(shade.moving for shade in self._shades):
+        # Like a real shade Pico, any button stops its shades while one of
+        # them is moving; only when they're all still do they move.
+        if any(shade.moving for shade in self._shades):
             for shade in self._shades:
                 shade.stop()
             return
-        else:
-            targets = [FAVORITE] * len(self._shades)
-        for shade, target in zip(self._shades, targets, strict=True):
+        target = {"open": 100, "close": 0}.get(self.role, FAVORITE)
+        for shade in self._shades:
             shade.go(target)
 
 

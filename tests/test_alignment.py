@@ -6,6 +6,7 @@ Most behavior is covered by the simulated scenarios in test_room.py.
 import pytest
 
 from custom_components.aligned_shade_group.alignment import (
+    Direction,
     Move,
     ShadeConfig,
     Starter,
@@ -69,6 +70,37 @@ def test_starter_skipped_when_a_shade_it_would_move_should_stay() -> None:
     # Pico press would wrongly move it.
     plan = GROUP.plan_moves(positions_pct_by_id(41, 50), 51, [pico(open_pct=100)])
     assert all(move.starter is None for move in plan.moves)
+
+
+def test_starter_skipped_when_one_of_its_shades_is_travelling() -> None:
+    # The high-sill shade is travelling and passing the scene's position for
+    # it, so the scene wouldn't start it, but would still command it.
+    scene = Starter(
+        name="scene.mixed", targets={HIGH_SILL.entity_id: 41, LOW_SILL.entity_id: 100}
+    )
+    plan = GROUP.plan_moves(
+        positions_pct_by_id(41, 50),
+        60,
+        [scene],
+        {HIGH_SILL.entity_id: Direction.OPENING},
+    )
+    assert all(move.starter is None for move in plan.moves)
+
+
+def test_starter_turns_travelling_shades_around() -> None:
+    # Both shades are opening, level; going back down, a starter may start
+    # them (a Pico's Stop is pressed first), but not to keep them going up.
+    travelling = dict.fromkeys(
+        (HIGH_SILL.entity_id, LOW_SILL.entity_id), Direction.OPENING
+    )
+    down = GROUP.plan_moves(
+        positions_pct_by_id(41, 50), 0, [pico(open_pct=0)], travelling
+    )
+    assert all(move.starter is not None for move in down.moves)
+    up = GROUP.plan_moves(
+        positions_pct_by_id(41, 50), 100, [pico(open_pct=100)], travelling
+    )
+    assert all(move.starter is None for move in up.moves)
 
 
 def test_starter_skipped_when_a_position_is_unknown() -> None:

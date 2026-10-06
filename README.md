@@ -56,9 +56,11 @@ Other shades that work the same way should work too, but haven't been tested.
   first and the others join as its hemline reaches theirs.
 - Shades that start level start together: with a Pico press or scene where
   one covers them, so the bridge starts them in lockstep, and stops while
-  moving go through the Picos. (A shade Pico's middle button sends
-  stationary shades to their favorite position, so it's only pressed while
-  the group is moving.)
+  moving go through the Picos. (While any of a shade Pico's shades is moving,
+  every button stops them, and when all are still its middle button sends
+  them to their favorite position; so the group only presses Stop while
+  moving, and On or Off while still, or just after Stop to turn moving
+  shades around together.)
 
 See [docs/DESIGN.md](docs/DESIGN.md) for details.
 

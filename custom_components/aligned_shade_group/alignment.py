@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Collection, Iterable, KeysView, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from types import MappingProxyType
 
 from .roll_profile import RollProfile, RollProfileView
 
@@ -154,7 +155,9 @@ class Move:
 
     `starter` is the starter that starts the shade, or None when its own
     `set_position` does. A shade a starter starts still needs its own command
-    (`needs_command`) unless the starter already sends it to its target.
+    (`needs_command`) unless the starter already sends it to its target. A
+    shade still travelling from an earlier plan that starts later is `held`
+    where it is from the start of the plan until then.
     """
 
     shade: Shade
@@ -163,6 +166,7 @@ class Move:
     delay_s: float = 0.0
     starter: Starter | None = None
     needs_command: bool = True
+    held: bool = False
 
     def direction(self) -> Direction:
         """Which way the shade moves."""
@@ -284,15 +288,18 @@ class AlignmentGroup:
         positions_pct_by_id: Mapping[str, int],
         target_pct: int,
         starters: Sequence[Starter] = (),
-        moving_entity_ids: Collection[str] = (),
+        travelling: Mapping[str, Direction] = MappingProxyType({}),
     ) -> Plan:
         """Plan the moves that bring the group to `target_pct`.
 
         Shades moving the same way start in level groups (see `_level_groups`),
         each when the leader reaches it. A group starts with the starters that
         fit it (see `_starter_fit`), and its other shades with commands.
-        `moving_entity_ids` are shades that may still be heading somewhere
-        else; any already at their new target get a move that holds them there.
+        `travelling` are shades still heading somewhere else, by the way
+        they're going: any already at their new target get a move that holds
+        them there, and any starting later are `held` until then. A starter
+        is only used on those starting now to turn them around (see
+        `_starter_fit`).
         """
         target_height = self.height_for_position(target_pct)
         moves: list[Move] = []
@@ -305,7 +312,7 @@ class AlignmentGroup:
             )
             if move.from_pct != move.target_pct:
                 moves.append(move)
-            elif shade.entity_id in moving_entity_ids:
+            elif shade.entity_id in travelling:
                 holds.append(move)
         # Shades moving (or held) in this plan, which a starter mustn't touch
         # unless it's starting them.
@@ -321,9 +328,14 @@ class AlignmentGroup:
         ]
         planned: list[Move] = []
         for group, delay_s in timed:
+            # Travelling shades that start later are held still until then.
+            travelling_now = travelling if delay_s == 0 else {}
             fits: list[tuple[Starter, set[str]]] = []
             for starter in starters:
-                if covered := _starter_fit(starter, group, positions_pct_by_id, moving):
+                covered = _starter_fit(
+                    starter, group, positions_pct_by_id, moving, travelling_now
+                )
+                if covered:
                     fits.append((starter, covered))
             # Starters covering more of the group first; each shade is started
             # by at most one of them.
@@ -340,6 +352,7 @@ class AlignmentGroup:
                         starter=by,
                         needs_command=by is None
                         or by.targets[move.shade.entity_id] != move.target_pct,
+                        held=delay_s > 0 and move.shade.entity_id in travelling,
                     )
                 )
         planned.sort(key=lambda move: move.delay_s)
@@ -409,6 +422,7 @@ def _starter_fit(
     group: list[Move],
     positions_pct_by_id: Mapping[str, int],
     moving: Collection[str],
+    travelling: Mapping[str, Direction],
 ) -> set[str] | None:
     """The group's shades a starter would start, or None if it can't be used.
 
@@ -417,6 +431,12 @@ def _starter_fit(
     level) and be sent the way its move goes. A shade that should end up
     elsewhere gets a follow-up command. A shade already at the starter's
     position isn't started by it, and mustn't be moving separately.
+
+    Its shades already travelling must all be turned around: shades going on
+    the way they're going need only their new targets, and one the starter
+    would send to where it's estimated to be might be stopped or turned back.
+    (A Pico pressed while its shades move stops them, so its Stop is pressed
+    first.)
     """
     moves_by_id = {move.shade.entity_id: move for move in group}
     covered = set()
@@ -424,6 +444,8 @@ def _starter_fit(
         if entity_id not in positions_pct_by_id:
             return None
         from_pct = positions_pct_by_id[entity_id]
+        if starter_pct == from_pct and entity_id in travelling:
+            return None
         if starter_pct == from_pct:
             # It doesn't start a shade already at its position: fine if that
             # shade stays put or starts now with this group, but one moving
@@ -435,6 +457,8 @@ def _starter_fit(
         if (move := moves_by_id.get(entity_id)) is None:
             return None
         if (starter_pct > from_pct) != (move.direction() is Direction.OPENING):
+            return None
+        if travelling.get(entity_id) is move.direction():
             return None
         covered.add(entity_id)
     return covered or None

@@ -236,7 +236,26 @@ Off to 0%) and each scene one (its shades to its positions); each starts its
 shades with a single command to the bridge. A starter can start a level group
 when every shade it would move (those not already at its position) is in that
 group and would move the way its move goes; shades it would also move but
-that should stay put, or start elsewhere, rule it out. The planner picks
+that should stay put, or start elsewhere, rule it out.
+
+Shades still travelling from the last plan (given a new target mid-run) need
+care:
+- Those that keep going the same way just get their new targets, which
+  redirects them without a pause; no starter is used on them.
+- Those turning around can be started together by a starter. A Pico pressed
+  while any of its shades is moving only stops them (see the Pico note under
+  Stop), so its Stop is pressed first and its On or Off straight after, back
+  to back (verified on Serena shades). A scene turns them around directly,
+  with the same pause as `set_position` (also verified).
+- A starter whose position for a travelling shade is where it's estimated to
+  be isn't used: the estimate isn't exact, so it might stop or turn back.
+- Those whose level group starts later are held where they are (sent their
+  estimated position) at the start of the plan; otherwise they'd keep going
+  the old way until their start.
+
+After a Pico's Stop, a shade reports where it actually stopped, which may not
+be the estimate, so anywhere along its last move is accepted as part of the
+plan rather than taken for an outside command. The planner picks
 starters covering as much of each group as possible, without starting any
 shade twice, and the group's other shades get `set_position`. A shade started
 toward a position that isn't its target (a Pico's endpoint when going
@@ -258,7 +277,8 @@ that's still sent through the Pico after the shades have stopped makes them go
 to their favorite position, while one sent just too early merely stops each
 shade separately. For the same reason, round a measured travel time down. If
 a shade reports a position that isn't part of the plan (another command, such
-as a physical Pico press, took over), the group stops following its plan. If a
+as a physical Pico press, took over), the plan is abandoned: shades keep going
+where they were sent, and starts still to come are cancelled. If a
 starting command fails, the plan is abandoned and the error returned to the
 caller; if a later start fails, the plan is abandoned too and the error
 logged, so the group doesn't report shades as moving that never started.
@@ -290,7 +310,11 @@ so through the bridge): the decision covers all the Pico's shades at once.
 While any of them is moving, it stops the moving ones and leaves stationary
 ones where they are; only when all are stationary does it go to favorite. So
 pressing it is safe as long as at least one of its shades is moving, which is
-why stop only presses Picos with a travelling shade. The simulator models it the same way.
+why stop only presses Picos with a travelling shade. On and Off do the same
+while any of the Pico's shades is moving: they stop them all, like the middle
+button, rather than sending them anywhere (also verified on Serena shades).
+So a Pico only starts travelling shades to turn them around, with its Stop
+pressed first (see Starters). The simulator models all of this.
 
 ## Out of scope (v1)
 

@@ -175,6 +175,35 @@ async def test_reverse_while_opening(
 
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+    # Pressed on moving shades, Close would only stop them: the Pico's Stop
+    # goes first, then Close turns them around together.
+    assert room.pico["stop"].presses == 1
+    assert room.pico["close"].presses == 1
+    reversals = {room[entity_id].starts[-1] for entity_id in (HIGH_SILL, LOW_SILL)}
+    assert len(reversals) == 1
+
+
+@pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
+async def test_reverse_holds_a_shade_that_starts_later(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, pico: bool
+) -> None:
+    # Opening, the low-sill shade leads and the high-sill one waits above it.
+    # Reversed, the high-sill one leads down, so the low-sill one must stop
+    # rising until the high-sill one comes down to it.
+    room = await build_room(
+        hass, freezer, same_tops(), pico, start_pct={LOW_SILL: 10, HIGH_SILL: 20}
+    )
+
+    await room.command("open_cover")
+    await room.run(1)
+    reversed_at = len(room.history)
+    await room.command("set_cover_position", position=5)
+    await room.run_until_still()
+
+    assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 5}
+    low_sill_pcts = [snapshot[LOW_SILL] for snapshot in room.history]
+    assert max(low_sill_pcts[reversed_at:]) <= low_sill_pcts[reversed_at - 1] + 1
+    assert room.misalignment(room.history[-1]) <= HEIGHT_TOLERANCE
 
 
 async def test_retarget_while_moving(
@@ -189,6 +218,8 @@ async def test_retarget_while_moving(
 
     assert room.positions_pct_by_id() == {HIGH_SILL: 40, LOW_SILL: 50}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+    # They keep going: a Pico press while they move would stop them first.
+    assert all(len(shade.starts) == 1 for shade in room.shades.values())
 
 
 @pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
@@ -398,7 +429,7 @@ async def test_failed_delayed_start_abandons_the_plan(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     # The Pico paired to high_sill is due to start it at about 6 s, but the
-    # bridge fails by then. The group stops following its plan rather than
+    # bridge fails by then. The group abandons its plan rather than
     # reporting high_sill as opening while it never started.
     room = await build_room(hass, freezer, same_tops(), [HIGH_SILL])
 

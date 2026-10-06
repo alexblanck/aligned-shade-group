@@ -66,8 +66,9 @@ Most bugs are at the seams, so tests favor whole flows over individual methods.
 
 - [tests/sim.py](tests/sim.py) simulates a room: shades are real cover
   entities that move over (frozen, manually advanced) time at their travel
-  speed, and a Pico that behaves like a Caseta shade Pico, including the middle
-  button going to the favorite position when nothing is moving. Everything goes
+  speed, and a Pico that behaves like a Caseta shade Pico: any button stops
+  its shades while one is moving, and the middle button goes to the favorite
+  position when nothing is. Everything goes
   through real Home Assistant services, and the group is created through its
   config flow. Commands pass through a simulated bridge (`room.bridge`) that
   can add latency, hold commands until released, or fail, for testing timing
