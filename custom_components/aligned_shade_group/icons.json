@@ -1,0 +1,9 @@
+{
+  "entity": {
+    "button": {
+      "realign": {
+        "default": "mdi:format-vertical-align-center"
+      }
+    }
+  }
+}

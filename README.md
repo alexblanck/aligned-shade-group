@@ -57,7 +57,8 @@ Other shades that work the same way should work too, but haven't been tested.
 - Like a single shade, every shade is sent its position even if it's already
   there. So setting the group to its current position realigns it: shades out
   of line meet at their average height, and ones that have drifted from where
-  they report are re-seated.
+  they report are re-seated. Each group's device has a **Realign** button
+  that does this.
 - Shades that start level start together: with a Pico press or scene where
   one covers them, so the bridge starts them in lockstep, and stops while
   moving go through the Picos. (While any of a shade Pico's shades is moving,

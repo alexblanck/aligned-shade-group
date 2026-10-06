@@ -9,7 +9,7 @@ from homeassistant.helpers import issue_registry as ir
 
 from .const import DOMAIN, missing_entities_issue_id
 
-PLATFORMS = [Platform.COVER]
+PLATFORMS = [Platform.BUTTON, Platform.COVER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

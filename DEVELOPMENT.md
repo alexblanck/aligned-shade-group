@@ -10,6 +10,7 @@ How to work on Aligned Shade Group. For how alignment and motion work, see
 | `custom_components/aligned_shade_group/roll_profile.py` | Pure math: how a roller's hemline height follows its position (`RollProfile`), and a shade's view of one. No Home Assistant imports |
 | `custom_components/aligned_shade_group/alignment.py` | Pure math: building a group from its settings, alignment, motion plans. No Home Assistant imports |
 | `custom_components/aligned_shade_group/cover.py` | The group entity: runs plans as service calls and timers, estimates positions while a plan runs |
+| `custom_components/aligned_shade_group/button.py` | The group's Realign button, which sets the group to its current position |
 | `custom_components/aligned_shade_group/pico.py` | Finding a Pico's On/Stop/Off buttons from its device |
 | `custom_components/aligned_shade_group/config_flow.py` | The setup screens: one config flow that creates a group (`user` step) or edits one (`reconfigure` step) |
 | `custom_components/aligned_shade_group/diagnostics.py` | "Download diagnostics": settings plus the group's live state |

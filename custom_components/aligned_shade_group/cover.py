@@ -569,6 +569,11 @@ class AlignedShadeGroup(CoverEntity):
         """Move the shared hemline to a group position."""
         await self._async_set_group_position(kwargs[ATTR_POSITION])
 
+    async def async_realign(self) -> None:
+        """Set the group to its current position (the Realign button)."""
+        if (current_pct := self.current_cover_position) is not None:
+            await self._async_set_group_position(current_pct)
+
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop every shade: with Picos where it's safe, else one by one."""
         travelling = self._travelling_moves().keys()

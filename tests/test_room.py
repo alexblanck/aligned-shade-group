@@ -663,6 +663,9 @@ async def test_pico_also_resends_a_shade_already_there(
     assert set(room.positions_pct_by_id().values()) == {0}
 
 
+REALIGN_BUTTON = "button.living_room_realign"
+
+
 async def test_shades_starting_to_move_are_commanded_first(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -679,15 +682,31 @@ async def test_shades_starting_to_move_are_commanded_first(
     assert started_at - commanded_at == pytest.approx(room.bridge.latency_s, abs=0.01)
 
 
-async def test_setting_the_current_position_aligns_the_shades(
-    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+@pytest.mark.parametrize(
+    "start_pct",
+    [{HIGH_SILL: 20, LOW_SILL: 50}, {HIGH_SILL: 50, LOW_SILL: 58}],
+    ids=["out-of-line", "level"],
+)
+@pytest.mark.parametrize("how", ["button", "set_position"])
+async def test_realign(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    start_pct: dict[str, int],
+    how: str,
 ) -> None:
-    room = await build_room(
-        hass, freezer, same_tops(), start_pct={HIGH_SILL: 20, LOW_SILL: 50}
-    )
+    # Setting the group to its current position, or pressing its Realign
+    # button (which does that): shades out of line meet at their average
+    # height, and every shade is sent its position, re-seating any that have
+    # drifted from what they report.
+    room = await build_room(hass, freezer, same_tops(), False, start_pct=start_pct)
     current_pct = room.group.attributes["current_position"]
 
-    await room.command("set_cover_position", position=current_pct)
+    if how == "button":
+        await hass.services.async_call(
+            "button", "press", {"entity_id": REALIGN_BUTTON}, blocking=True
+        )
+    else:
+        await room.command("set_cover_position", position=current_pct)
     await room.run_until_still()
 
     assert room.group.attributes["aligned"] is True

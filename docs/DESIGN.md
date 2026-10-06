@@ -277,7 +277,8 @@ there (verified on Serena shades), so this realigns shades that have drifted
 from what they report. Such a shade doesn't count as moving for starters: one
 that would leave it where it is can still be used, and if one the plan uses
 sends it to its position, that re-sends it instead of a command of its own.
-A run where nothing travels ends once its commands are sent.
+A run where nothing travels ends once its commands are sent. The group's
+Realign button sets it to its current position, to do this on demand.
 
 Staggered starts: a follower starts once the leader has moved from where it
 started to the follower's hemline; since positions change at a constant rate,

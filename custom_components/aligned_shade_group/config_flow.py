@@ -107,7 +107,7 @@ def _choose_shades_schema(hass: HomeAssistant) -> vol.Schema:
     aligned_shade_groups = [
         entry.entity_id
         for entry in er.async_get(hass).entities.values()
-        if entry.platform == DOMAIN
+        if entry.platform == DOMAIN and entry.domain == Platform.COVER
     ]
     return vol.Schema(
         {
