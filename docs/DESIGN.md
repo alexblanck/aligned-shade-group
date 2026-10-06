@@ -256,8 +256,10 @@ care:
 After a Pico's Stop, a shade reports where it actually stopped, which may not
 be the estimate, so anywhere along its last move is accepted as part of the
 plan rather than taken for an outside command. The planner picks
-starters covering as much of each group as possible, without starting any
-shade twice, and the group's other shades get `set_position`. A shade started
+starters covering as much of each group as possible, and the group's other
+shades get `set_position`. No two of a group's starters share any of its
+shades, even one a starter would leave where it is: fired together, it could
+send back a shade the other had just started. A shade started
 toward a position that isn't its target (a Pico's endpoint when going
 partway, or a scene's position) is sent its target straight after: a shade
 already moving keeps going and stops at the newly commanded position, whether

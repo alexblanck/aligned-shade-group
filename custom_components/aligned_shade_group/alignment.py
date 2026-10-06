@@ -345,11 +345,16 @@ class AlignmentGroup:
                 )
                 if covered:
                     fits.append((starter, covered))
-            # Starters covering more of the group first; each shade is started
-            # by at most one of them.
+            # Starters covering more of the group first. No two may share any
+            # of the group's shades, counting ones a starter leaves where they
+            # are: fired together, it would send back a shade the other starts.
+            group_ids = {move.shade.entity_id for move in group}
             starter_of: dict[str, Starter] = {}
+            claimed: set[str] = set()
             for starter, covered in sorted(fits, key=lambda fit: -len(fit[1])):
-                if not covered & starter_of.keys():
+                touched = starter.targets.keys() & group_ids
+                if not touched & claimed:
+                    claimed |= touched
                     starter_of |= dict.fromkeys(covered, starter)
             for move in group:
                 by = starter_of.get(move.shade.entity_id)
