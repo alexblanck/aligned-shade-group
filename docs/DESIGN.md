@@ -219,9 +219,6 @@ slider jump back from where it was dropped. Once the plan ends or is stopped,
 the group reports from the shades again, which by then report where they
 really are.
 
-A shade still on an earlier move that already sits at its new target
-is sent a command to hold there, otherwise it would carry on to its old target.
-
 **Level groups** — shades moving the same way are grouped by where they
 start: shades whose hemlines are within the alignment tolerance of each other
 (the same 1% of the group's range used for the `aligned` attribute) start
@@ -240,6 +237,8 @@ that should stay put, or start elsewhere, rule it out.
 
 Shades still travelling from the last plan (given a new target mid-run) need
 care:
+- Those already at their new target are sent it, to stop there; otherwise
+  they'd carry on to their old target.
 - Those that keep going the same way just get their new targets, which
   redirects them without a pause; no starter is used on them.
 - Those turning around can be started together by a starter. A Pico pressed

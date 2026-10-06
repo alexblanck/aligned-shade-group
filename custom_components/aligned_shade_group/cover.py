@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from functools import partial
@@ -107,8 +107,9 @@ class _RunningMove:
         return low <= position_pct <= high
 
     def travelling(self, now: datetime) -> bool:
-        """Whether the shade is estimated to be moving at `now`: started, not
-        yet arrived, and not a hold.
+        """Whether the shade is estimated to be moving at `now`: started and
+        not yet arrived. Never for a hold (no travel), nor for a held shade
+        before its start.
         """
         move = self.move
         travel_s = abs(move.target_pct - move.from_pct) / 100 * move.shade.travel_time_s
@@ -428,6 +429,8 @@ class AlignedShadeGroup(CoverEntity):
                         else None
                     ),
                     "needs_command": running_move.move.needs_command,
+                    "held": running_move.move.held,
+                    "stopped_within": running_move.stopped_within,
                     "start": running_move.start.isoformat(),
                     "estimated_pct": running_move.estimate_position(now),
                 }
@@ -637,7 +640,9 @@ class AlignedShadeGroup(CoverEntity):
         )
         direction = self._group_direction(positions_pct_by_id, target_pct)
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            for line in self._describe_plan(plan, target_pct, replaced_run):
+            for line in self._describe_plan(
+                plan, target_pct, replaced_run, travelling.keys()
+            ):
                 _LOGGER.debug(
                     "%s: plan #%s: %s", self.entity_id, self._plan_number, line
                 )
@@ -674,6 +679,7 @@ class AlignedShadeGroup(CoverEntity):
         plan: Plan,
         target_pct: int,
         replaced_run: str | None,
+        travelling: Collection[str],
     ) -> list[str]:
         """A plan as log lines: a summary, what starts shades, then each move.
 
@@ -697,6 +703,12 @@ class AlignedShadeGroup(CoverEntity):
             )
         )
         for move in plan.moves:
+            if move.from_pct == move.target_pct and move.shade.entity_id in travelling:
+                lines.append(
+                    f"{move.shade.entity_id} is sent {move.target_pct}% to stop "
+                    "there (estimated to be there already)"
+                )
+                continue
             if move.from_pct == move.target_pct:
                 again = (
                     f"{move.starter.name} sends it again at {move.delay_s:.1f}s"
@@ -814,7 +826,7 @@ class AlignedShadeGroup(CoverEntity):
             await self._async_start(plan, 0.0, stop_first=stop_first)
             # Nothing travels (shades only sent where they are): done once sent.
             if plan.duration_s() == 0 and generation == self._generation:
-                self._async_plan_done(dt_util.utcnow())
+                self._async_plan_done(dt_util.utcnow(), "nothing to travel")
         except HomeAssistantError as err:
             if generation == self._generation:
                 _LOGGER.debug(
@@ -876,19 +888,27 @@ class AlignedShadeGroup(CoverEntity):
         self, plan: Plan, delay_s: float, _now: datetime
     ) -> None:
         late_s = (dt_util.utcnow() - self._started).total_seconds() - delay_s
-        generation = self._generation
+        generation, run = self._generation, self._run
         try:
             await self._async_start(plan, delay_s, late_s)
         except HomeAssistantError as err:
-            _LOGGER.error(
-                "%s: %s: abandoned: couldn't start shades: %s",
-                self.entity_id,
-                self._run,
-                err,
-            )
+            # A newer run may have replaced this one while the command failed.
             if generation == self._generation:
+                _LOGGER.error(
+                    "%s: %s: abandoned: couldn't start shades: %s",
+                    self.entity_id,
+                    run,
+                    err,
+                )
                 self._abandon_plan("start_failed")
                 self.async_write_ha_state()
+            else:
+                _LOGGER.debug(
+                    "%s: %s: couldn't start shades, already replaced: %s",
+                    self.entity_id,
+                    run,
+                    err,
+                )
 
     async def _async_fire(
         self, starter: Starter, tag: str, stop_button: str | None = None
@@ -908,13 +928,13 @@ class AlignedShadeGroup(CoverEntity):
             await self._async_press(name, tag)
 
     @callback
-    def _async_plan_done(self, _now: datetime) -> None:
+    def _async_plan_done(
+        self, _now: datetime, why: str = "planned travel time elapsed"
+    ) -> None:
         # Caseta shades report their destination immediately, so the plan's
         # timing is the only sign they've stopped. Ending late is worse than
         # early: a Pico stop on stationary shades sends them to favorite.
-        _LOGGER.debug(
-            "%s: %s: finished: planned travel time elapsed", self.entity_id, self._run
-        )
+        _LOGGER.debug("%s: %s: finished: %s", self.entity_id, self._run, why)
         self._abandon_plan("finished")
         self.async_write_ha_state()
 

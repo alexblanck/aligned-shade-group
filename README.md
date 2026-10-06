@@ -118,8 +118,8 @@ many used a Pico or scene, and how they ended) and the commands sent to each
 shade, Pico button and scene. Attach it when reporting a problem.
 
 Turn on debug logging to see each plan the group makes: which Picos and
-scenes it used (and why not the others), every shade command with its delay,
-and stops. Use **Enable
+scenes it used, every shade command with its delay, what the shades
+report while it runs, and stops. Use **Enable
 debug logging** on the integration's page, or for logging that survives
 restarts:
 

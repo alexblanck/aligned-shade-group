@@ -173,8 +173,8 @@ Ways to run unreleased code:
   Assistant config's `custom_components/` folder and restart.
 
 Turn on debug logging (see the README) to see each plan the group makes: the
-positions it planned from, whether it used the Pico (and why not), and every
-shade command with its delay.
+positions it planned from, which Picos and scenes it used, every shade
+command with its delay, and what the shades report while it runs.
 
 ## Icon
 

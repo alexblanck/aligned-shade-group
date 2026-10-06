@@ -188,16 +188,15 @@ class Move:
 class Plan:
     """The moves that bring the group to a target hemline height.
 
-    Running a plan carries out its moves. `moves` has one entry per shade that
-    moves, plus "hold" moves (start equals target) for shades already there,
-    all sorted by start delay: those still heading to an earlier
-    target stop there, and the others are sent their position again, as a
-    shade's own `set_position` would (it re-seats the shade on the bridge,
-    which realigns one that's drifted): by a starter the plan fires anyway
-    that sends it there, if there is one, else by a command. At each start
-    delay, fire the
-    starters of that moment's moves, each once, then send the commands for
-    moves that need one.
+    Running a plan carries out its moves. `moves` has one per shade, sorted by
+    start delay. A shade already at its target gets a "hold" move (start
+    equals target): one still heading to an earlier target stops there, and
+    one that's still is sent its position again, as a shade's own
+    `set_position` would (it re-seats the shade on the bridge, which realigns
+    one that's drifted), by a starter the plan fires anyway that sends it
+    there, else by a command. At each start delay, fire the starters of that
+    moment's moves, each once, then send the commands for moves that need
+    one.
 
     A plan is its moves, not its starts (each listing the moves it begins):
     most questions are about one shade (where is it heading, where is it now,
@@ -302,9 +301,8 @@ class AlignmentGroup:
         fit it (see `_starter_fit`), and its other shades with commands.
         Shades already at their target get a hold move. `travelling` are
         shades still heading somewhere else, by the way they're going: any
-        starting later are `held` until then. A starter
-        is only used on those starting now to turn them around (see
-        `_starter_fit`).
+        starting later are `held` until then, and a starter is only used on
+        those starting now to turn them around (see `_starter_fit`).
         """
         target_height = self.height_for_position(target_pct)
         moves: list[Move] = []
@@ -368,24 +366,16 @@ class AlignmentGroup:
                         held=delay_s > 0 and move.shade.entity_id in travelling,
                     )
                 )
-        # A still shade already at its target that a starter in the plan sends
-        # there anyway is re-sent by that starter, not a command of its own.
+        # Each starter the plan fires, by name, with when it's fired.
         fired = {
             move.starter.name: (move.starter, move.delay_s)
             for move in planned
             if move.starter
         }
         holds = [
-            next(
-                (
-                    replace(hold, starter=starter, delay_s=delay_s, needs_command=False)
-                    for starter, delay_s in fired.values()
-                    if starter.targets.get(hold.shade.entity_id) == hold.target_pct
-                ),
-                hold,
-            )
-            if hold.shade.entity_id not in travelling
-            else hold
+            hold
+            if hold.shade.entity_id in travelling
+            else _resend(hold, fired.values())
             for hold in holds
         ]
         return Plan(moves=tuple(sorted((*holds, *planned), key=lambda m: m.delay_s)))
@@ -417,6 +407,16 @@ def _level_groups(moves: list[Move], tolerance_height: float) -> list[list[Move]
         else:
             groups.append([move])
     return groups
+
+
+def _resend(hold: Move, fired: Iterable[tuple[Starter, float]]) -> Move:
+    """A still shade's hold move, re-sent by a fired starter that sends it
+    to its position anyway rather than by a command of its own, if any.
+    """
+    for starter, delay_s in fired:
+        if starter.targets.get(hold.shade.entity_id) == hold.target_pct:
+            return replace(hold, starter=starter, delay_s=delay_s, needs_command=False)
+    return hold
 
 
 def _timed_groups(
