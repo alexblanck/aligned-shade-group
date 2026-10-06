@@ -144,8 +144,8 @@ async def test_stop_while_aligned_and_moving(
     await room.command("stop_cover")
     await room.run(20)
 
-    # Both stopped by the same Pico press, 20 in down from the top.
-    assert room.positions_pct_by_id() == {HIGH_SILL: 67, LOW_SILL: 72}
+    # Both stopped by the same Pico press, about 20 in down from the top.
+    assert room.positions_pct_by_id() == {HIGH_SILL: 66, LOW_SILL: 72}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
     assert room.group.attributes["current_position"] == 72
 
@@ -171,6 +171,10 @@ async def test_reverse_while_opening(
     await room.command("open_cover")
     await room.run(15)  # both shades moving up
     await room.command("close_cover")
+    await room.run(1)
+    # Where the Pico's Stop left them isn't quite the estimate, but the run
+    # carries on rather than taking that for another command.
+    assert room.group.state == "closing"
     await room.run_until_still()
 
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
@@ -422,7 +426,7 @@ async def test_pico_listed_twice_is_pressed_once(
 
     assert room.pico["close"].presses == 1
     assert room.pico["stop"].presses == 1
-    assert room.positions_pct_by_id() == {HIGH_SILL: 67, LOW_SILL: 72}
+    assert room.positions_pct_by_id() == {HIGH_SILL: 66, LOW_SILL: 72}
 
 
 async def test_failed_delayed_start_abandons_the_plan(
@@ -731,7 +735,7 @@ async def test_physical_pico_stop_takes_over(
     await room.run(1)
 
     assert room.group.state not in ("opening", "closing")
-    assert room.positions_pct_by_id() == {HIGH_SILL: 67, LOW_SILL: 72}
+    assert room.positions_pct_by_id() == {HIGH_SILL: 66, LOW_SILL: 72}
 
 
 async def test_diagnostics_mid_run(

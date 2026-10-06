@@ -56,6 +56,9 @@ FAVORITE = 50
 PICO_IDENTIFIER = ("lutron_caseta", "living_room_pico")
 PICO_BUTTON_NAMES = {"open": "On", "stop": "Stop", "close": "Off"}
 STEP_S = 0.1  # simulated time per tick
+# How far past the group's estimate a stopped shade reports, as seconds of
+# travel (real ones report about 1% further on).
+STOP_OVERSHOOT_S = 0.15
 
 
 @dataclass
@@ -248,6 +251,15 @@ class SimShade(CoverEntity):
 
     def stop(self) -> None:
         self.settle()
+        # Real shades report stopping about 1% further on than the group
+        # estimates. Why isn't known: the motor running on, or the bridge
+        # estimating positions from its own timing. Simulated as the shade
+        # moving on at once, so the bridge sees it stopped straight away.
+        overshoot_pct = STOP_OVERSHOOT_S * 100 / self.spec.travel_time_s()
+        if self.target_pct > self.position_pct:
+            self.position_pct = min(self.target_pct, self.position_pct + overshoot_pct)
+        elif self.target_pct < self.position_pct:
+            self.position_pct = max(self.target_pct, self.position_pct - overshoot_pct)
         self.target_pct = self.position_pct
         self._reported = round(self.position_pct)
         self.async_write_ha_state()
