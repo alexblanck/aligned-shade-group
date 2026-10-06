@@ -32,6 +32,41 @@ Possible approaches:
   stop" below).
 - If the error is consistent per direction, correct for it.
 
+### Timing edge cases left as they are
+
+From a review of the changes after 0.4.0. Each is possible in principle but
+unlikely or unseen on the hardware, so they're left until they show up. The
+simulator can't show most of them: it has no motor pause when a shade
+reverses, and its shades don't run ahead of the group's estimate (real ones
+report stopping about 1% past it).
+
+- **Commands still in flight when a run is replaced.** Stopping or replacing a
+  run cancels its timers, so nothing scheduled later is sent. But within one
+  moment's sequence (the Stop then On/Off of a turnaround, or the follow-up
+  commands after a Pico press), commands already under way still go out. A
+  stop between a turnaround's two presses could land before its On/Off, which
+  would then only stop the shades. Fix: check the run is still current before
+  each next command.
+- **Quick double reversal.** After a Pico's Stop, a report anywhere along the
+  shade's last move is accepted. On a second turnaround straight after the
+  first, the last move started from an estimate, and the shade may report
+  about 1% beyond it, so the run is abandoned (the shades still go where they
+  were sent). Not reproduced on hardware. Fix: widen the range by a couple of
+  percent at each end.
+- **No margin at a move's estimated arrival.** A shade counts as travelling
+  until its estimated arrival, and Stop presses and turnarounds rely on that.
+  Real shades run about 1% ahead, so in a run's last ~0.3 s a Pico's Stop could
+  find them already still (sending them to favorite), and a turnaround's
+  On/Off would then only stop them. Fix: stop counting a shade as travelling
+  a little before its estimated arrival, and use individual commands then.
+- **Two starters at a shade already in place.** If several starters the plan
+  fires would each send a shade already at its target there, the first one
+  found re-sends it. Re-sending moves a shade that's drifted; if a Pico
+  covering it is pressed while it's still moving, the press only stops it.
+- **The stop-report range lasts for the whole move.** While a shade's reports
+  along its last move are accepted, an outside command that sends it within
+  that range isn't noticed for the rest of the move.
+
 ## Enhancements
 
 ### A hub for overlapping groups
