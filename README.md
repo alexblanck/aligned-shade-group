@@ -98,14 +98,20 @@ Besides the usual cover state and position, the group exposes:
 |---|---|
 | `entity_id` | The shades in the group |
 | `aligned` | Whether every shade's hemline is level with the others (allowing for shades that are fully open or closed) |
-| `hemline_heights` | Each shade's current hemline height, in your configured unit |
+| `hemline_heights` | Each shade's hemline height, in your configured unit |
+
+Like the group's position, `aligned` and `hemline_heights` show where the
+shades are heading while the group moves (as Caseta shades report their
+destination), not where they are at that moment.
 
 ## Troubleshooting
 
 **Download diagnostics** (in the ⋮ menu on the integration's page, or on a
 group's device page) saves a JSON file with the group's settings, the heights
-and speeds it derived from them, each shade's position and hemline height, and
-the plan being run, if any. Attach it when reporting a problem.
+and speeds it derived from them, each shade's position and hemline height,
+the plan being run, if any, and counts since Home Assistant started: runs (how
+many used a Pico or scene, and how they ended) and the commands sent to each
+shade, Pico button and scene. Attach it when reporting a problem.
 
 Turn on debug logging to see each plan the group makes: which Picos and
 scenes it used (and why not the others), every shade command with its delay,

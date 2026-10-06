@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta
@@ -231,6 +232,12 @@ class AlignedShadeGroup(CoverEntity):
         self._started = dt_util.utcnow()
         # Numbers each plan, so its log lines ("plan #N", "run #N") go together.
         self._plan_number = 0
+        # Counts since Home Assistant started, for diagnostics.
+        self._counting_since = dt_util.utcnow()
+        self._runs_started = 0
+        self._runs_with_starters = 0
+        self._run_endings: Counter[str] = Counter()
+        self._service_calls: defaultdict[str, Counter[str]] = defaultdict(Counter)
         # Moves of the running plan, keyed by entity id.
         self._running_moves: dict[str, _RunningMove] = {}
         # Bumped whenever a plan is abandoned, so a failing command can tell
@@ -244,7 +251,7 @@ class AlignedShadeGroup(CoverEntity):
                 self.hass, self._entity_ids, self._async_member_changed
             )
         )
-        self.async_on_remove(self._abandon_plan)
+        self.async_on_remove(partial(self._abandon_plan, "removed"))
         self._update_positions()
         # After startup, so shades without a registry entry have a state.
         self.async_on_remove(async_at_started(self.hass, self._async_check_missing))
@@ -318,7 +325,7 @@ class AlignedShadeGroup(CoverEntity):
             entity_id,
             position_pct,
         )
-        self._abandon_plan()
+        self._abandon_plan("outside_command")
 
     @callback
     def _update_positions(self) -> None:
@@ -426,15 +433,32 @@ class AlignedShadeGroup(CoverEntity):
                 }
                 for entity_id, running_move in self._running_moves.items()
             ],
+            "counts": {
+                "since": self._counting_since.isoformat(),
+                "runs": {
+                    "started": self._runs_started,
+                    "with_pico_or_scene": self._runs_with_starters,
+                    "ended": dict(self._run_endings),
+                },
+                "service_calls": {
+                    entity_id: dict(calls)
+                    for entity_id, calls in self._service_calls.items()
+                },
+            },
         }
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose members and alignment.
 
-        Members go in `entity_id` rather than HA's `group_entities`: that comes
-        from setting `self.group`, which makes HA send service calls straight
-        to the members, bypassing alignment and the Pico.
+        Members go in `entity_id`, as in Home Assistant's own groups, so the
+        UI lists the member shades (for example in the more-info dialog).
+        Not in HA's `group_entities`: that comes from setting `self.group`,
+        which makes HA send service calls straight to the members, bypassing
+        alignment and the Pico.
+
+        Like the group's position, `aligned` and `hemline_heights` are worked
+        out from where shades are heading while a plan runs.
         """
         positions_pct_by_id = self._displayed_positions()
         return {
@@ -545,7 +569,7 @@ class AlignedShadeGroup(CoverEntity):
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop every shade: with Picos where it's safe, else one by one."""
         travelling = self._travelling_moves().keys()
-        self._abandon_plan()
+        self._abandon_plan("stopped")
         self.async_write_ha_state()
         # Every shade gets a stop, since others may be moving that the plan
         # doesn't know about. A shade Pico's middle button stops its shades
@@ -597,7 +621,7 @@ class AlignedShadeGroup(CoverEntity):
                 self.entity_id,
                 ", ".join(missing),
             )
-        self._abandon_plan()
+        self._abandon_plan("replaced")
         self._plan_number += 1
         plan = self._group.plan_moves(
             positions_pct_by_id,
@@ -620,6 +644,9 @@ class AlignedShadeGroup(CoverEntity):
                     "%s: plan #%s: %s", self.entity_id, self._plan_number, line
                 )
         if plan.moves:
+            self._runs_started += 1
+            if any(move.starter for move in plan.moves):
+                self._runs_with_starters += 1
             await self._async_run_plan(plan, direction, travelling)
         else:
             self.async_write_ha_state()  # a previous plan may have just been abandoned
@@ -788,7 +815,7 @@ class AlignedShadeGroup(CoverEntity):
                     self._run,
                     err,
                 )
-                self._abandon_plan()
+                self._abandon_plan("start_failed")
                 self.async_write_ha_state()
             raise
 
@@ -842,7 +869,7 @@ class AlignedShadeGroup(CoverEntity):
                 err,
             )
             if generation == self._generation:
-                self._abandon_plan()
+                self._abandon_plan("start_failed")
                 self.async_write_ha_state()
 
     async def _async_fire(
@@ -870,16 +897,19 @@ class AlignedShadeGroup(CoverEntity):
         _LOGGER.debug(
             "%s: %s: finished: planned travel time elapsed", self.entity_id, self._run
         )
-        self._abandon_plan()
+        self._abandon_plan("finished")
         self.async_write_ha_state()
 
     @callback
-    def _abandon_plan(self) -> None:
-        """Stop following the current plan.
+    def _abandon_plan(self, ending: str) -> None:
+        """Stop following the current plan, if one is running.
 
         Cancels starts that haven't happened yet and forgets the position
-        estimates. Shades that are already moving keep moving.
+        estimates. Shades that are already moving keep moving. `ending` says
+        why, for the counts in diagnostics.
         """
+        if self._moving:
+            self._run_endings[ending] += 1
         self._generation += 1
         for cancel in self._timers:
             cancel()
@@ -932,11 +962,20 @@ class AlignedShadeGroup(CoverEntity):
     ) -> float:
         """Call a service and return how long it took, in seconds."""
         started = time.monotonic()
-        await self.hass.services.async_call(
-            domain,
-            service,
-            {ATTR_ENTITY_ID: entity_id, **(data or {})},
-            blocking=True,
-            context=self._context,
-        )
+        try:
+            await self.hass.services.async_call(
+                domain,
+                service,
+                {ATTR_ENTITY_ID: entity_id, **(data or {})},
+                blocking=True,
+                context=self._context,
+            )
+        except HomeAssistantError:
+            self._count_call(entity_id, f"{service}_failed")
+            raise
+        self._count_call(entity_id, service)
         return time.monotonic() - started
+
+    def _count_call(self, entity_id: str | list[str], service: str) -> None:
+        for each in [entity_id] if isinstance(entity_id, str) else entity_id:
+            self._service_calls[each][service] += 1

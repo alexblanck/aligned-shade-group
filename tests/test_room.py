@@ -792,6 +792,40 @@ async def test_diagnostics_mid_run(
     )
 
 
+async def test_diagnostics_count_commands_and_runs(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    hass_client: ClientSessionGenerator,
+) -> None:
+    assert await async_setup_component(hass, "diagnostics", {})
+    room = await build_room(hass, freezer, same_tops(), start_pct=100)
+
+    await room.command("close_cover")  # level: a Pico press
+    await room.run(5)
+    await room.command("set_cover_position", position=50)  # on down: commands
+    await room.run(2)
+    await room.command("open_cover")  # turned around: Pico Stop, then Open
+    await room.run(2)
+    await room.command("stop_cover")
+    await room.run_until_still()
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, room.entry)
+
+    counts = diagnostics["group"]["counts"]
+    assert counts["runs"] == {
+        "started": 3,
+        "with_pico_or_scene": 2,
+        "ended": {"replaced": 2, "stopped": 1},
+    }
+    # What the group sent matches what the room received.
+    calls = counts["service_calls"]
+    for button in room.pico.values():
+        assert calls.get(button.entity_id, {}).get("press", 0) == button.presses
+    for entity_id, shade in room.shades.items():
+        sent = calls.get(entity_id, {}).get("set_cover_position", 0)
+        assert sent == len(shade.commanded)
+    assert room.pico["stop"].presses == 2
+
+
 async def test_roller_measurements_match_the_simulation() -> None:
     left_1, left_2 = living_room_left()
     measured = {
