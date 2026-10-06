@@ -189,8 +189,13 @@ class Plan:
     """The moves that bring the group to a target hemline height.
 
     Running a plan carries out its moves. `moves` has one entry per shade that
-    moves, sorted by start delay, plus "hold" moves (start equals target) for
-    shades still heading to an earlier target. At each start delay, fire the
+    moves, plus "hold" moves (start equals target) for shades already there,
+    all sorted by start delay: those still heading to an earlier
+    target stop there, and the others are sent their position again, as a
+    shade's own `set_position` would (it re-seats the shade on the bridge,
+    which realigns one that's drifted): by a starter the plan fires anyway
+    that sends it there, if there is one, else by a command. At each start
+    delay, fire the
     starters of that moment's moves, each once, then send the commands for
     moves that need one.
 
@@ -295,9 +300,9 @@ class AlignmentGroup:
         Shades moving the same way start in level groups (see `_level_groups`),
         each when the leader reaches it. A group starts with the starters that
         fit it (see `_starter_fit`), and its other shades with commands.
-        `travelling` are shades still heading somewhere else, by the way
-        they're going: any already at their new target get a move that holds
-        them there, and any starting later are `held` until then. A starter
+        Shades already at their target get a hold move. `travelling` are
+        shades still heading somewhere else, by the way they're going: any
+        starting later are `held` until then. A starter
         is only used on those starting now to turn them around (see
         `_starter_fit`).
         """
@@ -312,11 +317,14 @@ class AlignmentGroup:
             )
             if move.from_pct != move.target_pct:
                 moves.append(move)
-            elif shade.entity_id in travelling:
+            else:
                 holds.append(move)
-        # Shades moving (or held) in this plan, which a starter mustn't touch
-        # unless it's starting them.
-        moving = {move.shade.entity_id for move in (*moves, *holds)}
+        # Shades moving in this plan (or held after travelling), which a
+        # starter mustn't touch unless it's starting them. One already still
+        # at its target may be: a starter leaves it where it is.
+        moving = {move.shade.entity_id for move in moves} | {
+            move.shade.entity_id for move in holds if move.shade.entity_id in travelling
+        }
 
         timed = [
             timed_group
@@ -355,8 +363,27 @@ class AlignmentGroup:
                         held=delay_s > 0 and move.shade.entity_id in travelling,
                     )
                 )
-        planned.sort(key=lambda move: move.delay_s)
-        return Plan(moves=(*holds, *planned))
+        # A still shade already at its target that a starter in the plan sends
+        # there anyway is re-sent by that starter, not a command of its own.
+        fired = {
+            move.starter.name: (move.starter, move.delay_s)
+            for move in planned
+            if move.starter
+        }
+        holds = [
+            next(
+                (
+                    replace(hold, starter=starter, delay_s=delay_s, needs_command=False)
+                    for starter, delay_s in fired.values()
+                    if starter.targets.get(hold.shade.entity_id) == hold.target_pct
+                ),
+                hold,
+            )
+            if hold.shade.entity_id not in travelling
+            else hold
+            for hold in holds
+        ]
+        return Plan(moves=tuple(sorted((*holds, *planned), key=lambda m: m.delay_s)))
 
     def _shades_for(self, entity_ids: KeysView[str]) -> list[Shade]:
         """The group's shades with these entity ids, in group order."""

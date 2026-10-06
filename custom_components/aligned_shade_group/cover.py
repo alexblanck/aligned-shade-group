@@ -637,9 +637,7 @@ class AlignedShadeGroup(CoverEntity):
         )
         direction = self._group_direction(positions_pct_by_id, target_pct)
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            for line in self._describe_plan(
-                plan, target_pct, positions_pct_by_id, replaced_run
-            ):
+            for line in self._describe_plan(plan, target_pct, replaced_run):
                 _LOGGER.debug(
                     "%s: plan #%s: %s", self.entity_id, self._plan_number, line
                 )
@@ -675,7 +673,6 @@ class AlignedShadeGroup(CoverEntity):
         self,
         plan: Plan,
         target_pct: int,
-        positions_pct_by_id: dict[str, int],
         replaced_run: str | None,
     ) -> list[str]:
         """A plan as log lines: a summary, what starts shades, then each move.
@@ -699,11 +696,16 @@ class AlignedShadeGroup(CoverEntity):
                 (move.starter.name, move.delay_s) for move in plan.moves if move.starter
             )
         )
-        moving = set()
         for move in plan.moves:
-            moving.add(move.shade.entity_id)
             if move.from_pct == move.target_pct:
-                lines.append(f"{move.shade.entity_id} holds at {move.target_pct}%")
+                again = (
+                    f"{move.starter.name} sends it again at {move.delay_s:.1f}s"
+                    if move.starter
+                    else "sent it again"
+                )
+                lines.append(
+                    f"{move.shade.entity_id} is already at {move.target_pct}%; {again}"
+                )
                 continue
             if move.starter is None:
                 start = f"at {move.delay_s:.1f}s"
@@ -717,9 +719,6 @@ class AlignedShadeGroup(CoverEntity):
                 f"{'held until it starts' if move.held else 'starts'} {start}, "
                 f"arrives at {move.arrival_s():.1f}s"
             )
-        for entity_id, position_pct in positions_pct_by_id.items():
-            if entity_id not in moving:
-                lines.append(f"{entity_id} stays at {position_pct}%")
         return lines
 
     @callback
@@ -799,14 +798,18 @@ class AlignedShadeGroup(CoverEntity):
                         partial(self._async_delayed_start, plan, delay_s),
                     )
                 )
-        self._timers.append(
-            async_call_later(self.hass, plan.duration_s(), self._async_plan_done)
-        )
+        if plan.duration_s() > 0:
+            self._timers.append(
+                async_call_later(self.hass, plan.duration_s(), self._async_plan_done)
+            )
         self.async_write_ha_state()
 
         generation = self._generation
         try:
             await self._async_start(plan, 0.0, stop_first=stop_first)
+            # Nothing travels (shades only sent where they are): done once sent.
+            if plan.duration_s() == 0 and generation == self._generation:
+                self._async_plan_done(dt_util.utcnow())
         except HomeAssistantError as err:
             if generation == self._generation:
                 _LOGGER.debug(

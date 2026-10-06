@@ -264,6 +264,14 @@ already moving keeps going and stops at the newly commanded position, whether
 that's short of or beyond where it was heading (verified on Serena shades).
 Everything due at the same moment goes out together, starters first.
 
+Shades already at their target are sent it again at the start, as a shade's
+own `set_position` would be: the bridge moves a shade it believes is already
+there (verified on Serena shades), so this realigns shades that have drifted
+from what they report. Such a shade doesn't count as moving for starters: one
+that would leave it where it is can still be used, and if one the plan uses
+sends it to its position, that re-sends it instead of a command of its own.
+A run where nothing travels ends once its commands are sent.
+
 Staggered starts: a follower starts once the leader has moved from where it
 started to the follower's hemline; since positions change at a constant rate,
 that's the leader's change in position as a share of its travel time.

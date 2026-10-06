@@ -54,6 +54,10 @@ Other shades that work the same way should work too, but haven't been tested.
   own range).
 - When shades start from different heights, the lowest (or highest) one starts
   first and the others join as its hemline reaches theirs.
+- Like a single shade, every shade is sent its position even if it's already
+  there. So setting the group to its current position realigns it: shades out
+  of line meet at their average height, and ones that have drifted from where
+  they report are re-seated.
 - Shades that start level start together: with a Pico press or scene where
   one covers them, so the bridge starts them in lockstep, and stops while
   moving go through the Picos. (While any of a shade Pico's shades is moving,

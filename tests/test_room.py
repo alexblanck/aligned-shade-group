@@ -593,6 +593,59 @@ async def test_retarget_to_where_the_shades_are(
 
 
 @pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
+async def test_shades_already_there_are_sent_their_position_again(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, pico: bool
+) -> None:
+    # Like a shade's own set_position, which re-seats a shade even when it
+    # reports being there already: a way to realign shades that aren't.
+    room = await build_room(hass, freezer, same_tops(), pico, start_pct=100)
+
+    await room.command("open_cover")
+    await room.run_until_still()
+
+    assert all(shade.commanded == [100] for shade in room.shades.values())
+    assert room.positions_pct_by_id() == {HIGH_SILL: 100, LOW_SILL: 100}
+    if pico:
+        assert all(button.presses == 0 for button in room.pico.values())
+
+
+async def test_pico_also_resends_a_shade_already_there(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # left_1 is already closed. The Pico's Off closes left_2 and sends left_1
+    # to closed again, so left_1 needs no command of its own.
+    room = await build_room(
+        hass,
+        freezer,
+        living_room_left(),
+        start_pct={"cover.left_1": 0, "cover.left_2": 20},
+    )
+
+    await room.command("close_cover")
+    await room.run_until_still()
+
+    assert room.pico["close"].presses == 1
+    assert all(shade.commanded == [] for shade in room.shades.values())
+    assert set(room.positions_pct_by_id().values()) == {0}
+
+
+async def test_setting_the_current_position_aligns_the_shades(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(
+        hass, freezer, same_tops(), start_pct={HIGH_SILL: 20, LOW_SILL: 50}
+    )
+    current_pct = room.group.attributes["current_position"]
+
+    await room.command("set_cover_position", position=current_pct)
+    await room.run_until_still()
+
+    assert room.group.attributes["aligned"] is True
+    assert room.group.attributes["current_position"] == current_pct
+    assert all(len(shade.commanded) == 1 for shade in room.shades.values())
+
+
+@pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
 async def test_staggered_start_with_slow_commands(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
