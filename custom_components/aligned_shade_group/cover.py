@@ -195,8 +195,10 @@ class AlignedShadeGroup(CoverEntity):
     _attr_has_entity_name = True
     _attr_name = None  # the group's device name is the entity's name
     _attr_device_class = CoverDeviceClass.SHADE
-    # Derived from the shades' own recorded states; no need to store them too.
-    _unrecorded_attributes = frozenset({ATTR_ENTITY_ID, ATTR_HEMLINE_HEIGHTS})
+    # The member list never changes between states, so isn't worth storing.
+    # Hemline heights are recorded: they can be worked out from the shades'
+    # positions, but having them in history makes alignment easy to look back on.
+    _unrecorded_attributes = frozenset({ATTR_ENTITY_ID})
     _attr_supported_features = (
         CoverEntityFeature.OPEN
         | CoverEntityFeature.CLOSE
