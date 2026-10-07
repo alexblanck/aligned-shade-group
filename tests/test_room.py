@@ -237,6 +237,30 @@ async def test_retarget_while_moving(
     assert all(len(shade.starts()) == 1 for shade in room.shades.values())
 
 
+async def test_small_move_doesnt_overshoot(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    # Seen on the two left shades, moving down 1%: the Pico's Off started
+    # them, and by the time the bridge got to their targets they'd gone past.
+    room = await build_room(
+        hass,
+        freezer,
+        living_room_left(),
+        start_pct={"cover.left_1": 77, "cover.left_2": 85},
+    )
+    # Each command took 0.07-0.23 s on the living room's bridge.
+    room.bridge.latency_s = 0.15
+
+    await room.command("set_cover_position", position=84)
+    await room.run_until_still()
+
+    assert room.positions_pct_by_id() == {"cover.left_1": 76, "cover.left_2": 84}
+    assert all(shade.overshoot_pct() == 0 for shade in room.shades.values())
+    assert room.pico["close"].presses == 0
+    assert started_together(room, ["cover.left_1", "cover.left_2"])
+    assert room.worst_misalignment() <= HEIGHT_TOLERANCE
+
+
 @pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
 async def test_different_tops_and_sills(
     hass: HomeAssistant,

@@ -27,6 +27,10 @@ from .roll_profile import RollProfile, RollProfileView
 # shade up to 0.5% of its span off, so this leaves headroom while staying small.
 ALIGN_TOLERANCE_FRACTION = 0.01
 
+# Seconds the bridge takes to handle each command; it handles them one at a
+# time. 0.07-0.23 s seen on a Caseta bridge.
+BRIDGE_COMMAND_S = 0.15
+
 
 class Direction(StrEnum):
     """Direction of travel."""
@@ -178,10 +182,14 @@ class Move:
         """Hemline height where the shade starts."""
         return self.shade.height_for_position(self.from_pct)
 
+    def travel_s(self) -> float:
+        """Seconds the shade spends moving."""
+        travel_pct = abs(self.target_pct - self.from_pct)
+        return travel_pct / 100 * self.shade.travel_time_s
+
     def arrival_s(self) -> float:
         """Seconds from the start of the plan until the shade arrives."""
-        travel_pct = abs(self.target_pct - self.from_pct)
-        return self.delay_s + travel_pct / 100 * self.shade.travel_time_s
+        return self.delay_s + self.travel_s()
 
 
 @dataclass(frozen=True)
@@ -354,6 +362,7 @@ class AlignmentGroup:
                 if not touched & claimed:
                     claimed |= touched
                     starter_of |= dict.fromkeys(covered, starter)
+            starter_of = _redirected_in_time(starter_of, group, travelling_now)
             for move in group:
                 by = starter_of.get(move.shade.entity_id)
                 planned.append(
@@ -447,6 +456,49 @@ def _timed_groups(
         )
         timed.append((group, delay_s))
     return timed
+
+
+def _redirected_in_time(
+    starter_of: Mapping[str, Starter],
+    group: list[Move],
+    travelling: Mapping[str, Direction],
+) -> dict[str, Starter]:
+    """`starter_of` without starters whose shades would pass their targets
+    before being sent them.
+
+    A shade a starter sends beyond its target is sent its target straight
+    after, but the bridge handles commands one at a time: the starters (each
+    turning shades around after its Stop), then the group's commands, in no
+    set order. A starter is dropped if any of its shades would arrive before
+    the last of those, with a command to spare: it would go past and come
+    back. Its shades get commands of their own instead.
+    """
+    moves_by_id = {move.shade.entity_id: move for move in group}
+    presses = len({starter.name for starter in starter_of.values()}) + len(
+        {
+            starter.name
+            for entity_id, starter in starter_of.items()
+            if entity_id in travelling
+        }
+    )
+    commands = sum(
+        1
+        for move in group
+        if (starter := starter_of.get(move.shade.entity_id)) is None
+        or starter.targets[move.shade.entity_id] != move.target_pct
+    )
+    redirect_s = (presses + commands + 1) * BRIDGE_COMMAND_S
+    too_short = {
+        starter.name
+        for entity_id, starter in starter_of.items()
+        if starter.targets[entity_id] != moves_by_id[entity_id].target_pct
+        and moves_by_id[entity_id].travel_s() < redirect_s
+    }
+    return {
+        entity_id: starter
+        for entity_id, starter in starter_of.items()
+        if starter.name not in too_short
+    }
 
 
 def _starter_fit(

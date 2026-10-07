@@ -256,6 +256,26 @@ class SimShade(CoverEntity):
             if motion.source == "set_position"
         ]
 
+    def overshoot_pct(self, since: int = 0) -> float:
+        """How far past where it is now it went, in percent, after the
+        `since`th command it acted on: from where that command found it, it
+        should only ever have come toward where it ended up.
+
+        Its furthest points are where commands turned it around, so they're
+        all in the history.
+        """
+        motions = self.history[since:]
+        if not motions:
+            return 0.0
+        side = motions[0].position_pct - self.position_pct
+        return max(
+            0.0,
+            *(
+                (self.position_pct - motion.position_pct) * math.copysign(1, side)
+                for motion in motions
+            ),
+        )
+
     @property
     def moving(self) -> bool:
         return self.position_pct != self.target_pct
