@@ -191,6 +191,28 @@ class ShadeSpec:
         return f"cover.{self.name}"
 
 
+@dataclass(frozen=True)
+class Motion:
+    """One command a shade acted on: where it was, where it was heading, and
+    where it's heading now. `source` is what sent it: "set_position", "open",
+    "close" or "stop" for the shade's own services, else the Pico button or
+    scene. A shade standing still is heading where it is.
+    """
+
+    time: float
+    position_pct: float
+    from_target_pct: float
+    target_pct: float
+    source: str
+
+    def starts(self) -> bool:
+        """Whether it set a still shade moving."""
+        return (
+            self.from_target_pct == self.position_pct
+            and self.target_pct != self.position_pct
+        )
+
+
 class SimShade(CoverEntity):
     """A shade that moves toward its target at a constant speed."""
 
@@ -213,10 +235,26 @@ class SimShade(CoverEntity):
         self.target_pct = self.position_pct
         self._reported = round(self.position_pct)
         self._last = dt_util.utcnow()
-        # (time, target_pct) log of motion starts, for synchronization checks.
-        self.starts: list[tuple[float, float]] = []
-        # Positions it was sent with its own set_position command.
-        self.commanded: list[float] = []
+        # Every command it acted on, in order.
+        self.history: list[Motion] = []
+
+    def starts(self) -> list[tuple[float, float]]:
+        """When it started moving from still, and where to, for synchronization
+        checks.
+        """
+        return [
+            (motion.time, motion.target_pct)
+            for motion in self.history
+            if motion.starts()
+        ]
+
+    def commanded(self) -> list[float]:
+        """Positions it was sent with its own set_position command."""
+        return [
+            motion.target_pct
+            for motion in self.history
+            if motion.source == "set_position"
+        ]
 
     @property
     def moving(self) -> bool:
@@ -241,10 +279,20 @@ class SimShade(CoverEntity):
         elif self.target_pct < self.position_pct:
             self.position_pct = max(self.target_pct, self.position_pct - step_pct)
 
-    def go(self, target_pct: float) -> None:
+    def _record(self, target_pct: float, source: str) -> None:
+        self.history.append(
+            Motion(
+                time=dt_util.utcnow().timestamp(),
+                position_pct=self.position_pct,
+                from_target_pct=self.target_pct,
+                target_pct=target_pct,
+                source=source,
+            )
+        )
+
+    def go(self, target_pct: float, source: str) -> None:
         self.settle()
-        if not self.moving and target_pct != self.position_pct:
-            self.starts.append((dt_util.utcnow().timestamp(), target_pct))
+        self._record(target_pct, source)
         self.target_pct = target_pct
         self._reported = round(target_pct)
         self.async_write_ha_state()
@@ -260,6 +308,7 @@ class SimShade(CoverEntity):
             self.position_pct = min(self.target_pct, self.position_pct + overshoot_pct)
         elif self.target_pct < self.position_pct:
             self.position_pct = max(self.target_pct, self.position_pct - overshoot_pct)
+        self._record(self.position_pct, "stop")
         self.target_pct = self.position_pct
         self._reported = round(self.position_pct)
         self.async_write_ha_state()
@@ -271,16 +320,15 @@ class SimShade(CoverEntity):
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         await self._bridge.deliver(gated=True)
-        self.commanded.append(kwargs["position"])
-        self.go(kwargs["position"])
+        self.go(kwargs["position"], "set_position")
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         await self._bridge.deliver(gated=True)
-        self.go(100)
+        self.go(100, "open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         await self._bridge.deliver(gated=True)
-        self.go(0)
+        self.go(0, "close")
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         await self._bridge.deliver()
@@ -317,7 +365,7 @@ class SimPicoButton(ButtonEntity):
             return
         target = {"open": 100, "close": 0}.get(self.role, FAVORITE)
         for shade in self._shades:
-            shade.go(target)
+            shade.go(target, self.entity_id)
 
 
 class SimScene(Scene):
@@ -351,7 +399,7 @@ class SimScene(Scene):
         for shade, _ in self._targets:
             shade.settle()
         for shade, target_pct in self._targets:
-            shade.go(target_pct)
+            shade.go(target_pct, self.entity_id)
 
 
 class Room:

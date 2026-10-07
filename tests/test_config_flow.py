@@ -624,7 +624,7 @@ async def test_reconfigure_mid_run(
     await room.run(20)
 
     # The reloaded group forgot the old plan, including its pending start.
-    assert room[HIGH_SILL].starts == []
+    assert room[HIGH_SILL].starts() == []
     assert room.group.state != "opening"
 
 

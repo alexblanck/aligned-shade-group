@@ -48,7 +48,7 @@ def started_together(room: Room, entity_ids: list[str]) -> bool:
     allow for that; shades started by one Pico press or scene start at exactly
     the same instant (checked with == where that's the point).
     """
-    starts = [room[entity_id].starts[0][0] for entity_id in entity_ids]
+    starts = [room[entity_id].starts()[0][0] for entity_id in entity_ids]
     return max(starts) - min(starts) <= len(entity_ids) * room.bridge.latency_s
 
 
@@ -68,8 +68,8 @@ async def test_open_from_closed_stays_aligned(
     assert room.positions_pct_by_id() == {HIGH_SILL: 100, LOW_SILL: 100}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
     # The high-sill shade waited until the other's hemline reached its sill.
-    low_start = room[LOW_SILL].starts[0][0]
-    high_start = room[HIGH_SILL].starts[0][0]
+    low_start = room[LOW_SILL].starts()[0][0]
+    high_start = room[HIGH_SILL].starts()[0][0]
     assert high_start - low_start == pytest.approx(6, abs=0.5)
     assert room.group.state == "open"
     assert room.group.attributes["current_position"] == 100
@@ -87,7 +87,7 @@ async def test_close_from_open_uses_pico_in_lockstep(
     await room.run_until_still()
 
     assert room.pico["close"].presses == 1
-    assert room[HIGH_SILL].starts[0][0] == room[LOW_SILL].starts[0][0]
+    assert room[HIGH_SILL].starts()[0][0] == room[LOW_SILL].starts()[0][0]
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
     assert room.group.state == "closed"
@@ -125,7 +125,7 @@ async def test_stop_during_staggered_open(
     await room.run(20)
 
     assert room.pico["stop"].presses == 1
-    assert not room[HIGH_SILL].starts, "pending start fired after stop"
+    assert not room[HIGH_SILL].starts(), "pending start fired after stop"
     assert room.positions_pct_by_id()[LOW_SILL] == pytest.approx(8, abs=1)
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
     assert room.group.state not in ("opening", "closing")
@@ -184,7 +184,7 @@ async def test_reverse_while_opening(
     # goes first, then Close turns them around together.
     assert room.pico["stop"].presses == 1
     assert room.pico["close"].presses == 1
-    reversals = {room[entity_id].starts[-1] for entity_id in (HIGH_SILL, LOW_SILL)}
+    reversals = {room[entity_id].starts()[-1] for entity_id in (HIGH_SILL, LOW_SILL)}
     assert len(reversals) == 1
 
 
@@ -218,7 +218,7 @@ async def test_reverse_holds_a_shade_that_starts_later(
     assert max(low_sill_pcts[reversed_at:]) <= low_sill_pcts[reversed_at - 1] + 3
     assert room.misalignment(room.history[-1]) <= HEIGHT_TOLERANCE
     # Stopped, not sent back to its estimated position: only ever its targets.
-    assert room[LOW_SILL].commanded == [100, 5]
+    assert room[LOW_SILL].commanded() == [100, 5]
 
 
 async def test_retarget_while_moving(
@@ -234,7 +234,7 @@ async def test_retarget_while_moving(
     assert room.positions_pct_by_id() == {HIGH_SILL: 40, LOW_SILL: 50}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
     # They keep going: a Pico press while they move would stop them first.
-    assert all(len(shade.starts) == 1 for shade in room.shades.values())
+    assert all(len(shade.starts()) == 1 for shade in room.shades.values())
 
 
 @pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
@@ -476,7 +476,7 @@ async def test_failed_delayed_start_abandons_the_plan(
     room.bridge.fail = True
     await room.run(4)
 
-    assert not room[HIGH_SILL].starts
+    assert not room[HIGH_SILL].starts()
     assert room.group.state not in ("opening", "closing")
     assert room.group.attributes["hemline_heights"][HIGH_SILL] == 24
 
@@ -637,7 +637,7 @@ async def test_shades_already_there_are_sent_their_position_again(
     await room.command("open_cover")
     await room.run_until_still()
 
-    assert all(shade.commanded == [100] for shade in room.shades.values())
+    assert all(shade.commanded() == [100] for shade in room.shades.values())
     assert room.positions_pct_by_id() == {HIGH_SILL: 100, LOW_SILL: 100}
     if pico:
         assert all(button.presses == 0 for button in room.pico.values())
@@ -659,7 +659,7 @@ async def test_pico_also_resends_a_shade_already_there(
     await room.run_until_still()
 
     assert room.pico["close"].presses == 1
-    assert all(shade.commanded == [] for shade in room.shades.values())
+    assert all(shade.commanded() == [] for shade in room.shades.values())
     assert set(room.positions_pct_by_id().values()) == {0}
 
 
@@ -678,7 +678,7 @@ async def test_shades_starting_to_move_are_commanded_first(
 
     await room.command("open_cover")
 
-    (started_at, _), *_ = room[LOW_SILL].starts
+    (started_at, _), *_ = room[LOW_SILL].starts()
     assert started_at - commanded_at == pytest.approx(room.bridge.latency_s, abs=0.01)
 
 
@@ -711,7 +711,7 @@ async def test_realign(
 
     assert room.group.attributes["aligned"] is True
     assert room.group.attributes["current_position"] == current_pct
-    assert all(len(shade.commanded) == 1 for shade in room.shades.values())
+    assert all(len(shade.commanded()) == 1 for shade in room.shades.values())
 
 
 @pytest.mark.parametrize("pico", [True, False], ids=["pico", "no-pico"])
@@ -728,8 +728,8 @@ async def test_staggered_start_with_slow_commands(
 
     # Each shade starts a second after its command; the gap between them must
     # still be what the hemlines need (12 in at 2 in/s).
-    low_start = room[LOW_SILL].starts[0][0]
-    high_start = room[HIGH_SILL].starts[0][0]
+    low_start = room[LOW_SILL].starts()[0][0]
+    high_start = room[HIGH_SILL].starts()[0][0]
     assert high_start - low_start == pytest.approx(6, abs=0.5)
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
     assert room.positions_pct_by_id() == {HIGH_SILL: 100, LOW_SILL: 100}
@@ -750,7 +750,7 @@ async def test_retarget_while_a_staggered_start_is_pending(
 
     assert room.positions_pct_by_id() == {HIGH_SILL: 40, LOW_SILL: 50}
     # The original start (to 100%) never fired; only the new one did.
-    assert [target for _, target in room[HIGH_SILL].starts] == [40]
+    assert [target for _, target in room[HIGH_SILL].starts()] == [40]
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
 
 
@@ -773,7 +773,7 @@ async def test_new_command_while_the_first_commands_are_in_flight(
     await room.run_until_still()
 
     # The opening plan's delayed start for the high-sill shade must not fire.
-    assert room[HIGH_SILL].starts == []
+    assert room[HIGH_SILL].starts() == []
     assert room.positions_pct_by_id() == {HIGH_SILL: 0, LOW_SILL: 0}
 
 
@@ -839,7 +839,7 @@ async def test_outside_command_takes_over(
     assert room.group.state != "opening"
 
     await room.run(20)
-    assert room[HIGH_SILL].starts == []
+    assert room[HIGH_SILL].starts() == []
     assert room.positions_pct_by_id()[LOW_SILL] == 20
 
 
@@ -944,7 +944,7 @@ async def test_diagnostics_count_commands_and_runs(
         assert calls.get(button.entity_id, {}).get("press", 0) == button.presses
     for entity_id, shade in room.shades.items():
         sent = calls.get(entity_id, {}).get("set_cover_position", 0)
-        assert sent == len(shade.commanded)
+        assert sent == len(shade.commanded())
     assert room.pico["stop"].presses == 2
 
 
@@ -1011,7 +1011,7 @@ async def test_living_room_all_stays_level(
     await room.command("open_cover")
     await room.run_until_still()
     assert room.pico["open"].presses == 0
-    starts = {eid: room[eid].starts[0][0] for eid in [*tall, "cover.left_1"]}
+    starts = {eid: room[eid].starts()[0][0] for eid in [*tall, "cover.left_1"]}
     assert started_together(room, tall)
     assert starts["cover.left_1"] - starts["cover.left_2"] == pytest.approx(8, abs=0.5)
 
@@ -1072,9 +1072,11 @@ async def test_living_room_all_opens_with_the_scene(
 
     assert room.scenes[OPEN_IDENTICAL].activations == 1
     assert room.pico["open"].presses == 0
-    assert len({room[eid].starts[0][0] for eid in IDENTICAL}) == 1
-    assert all(room[eid].commanded == [] for eid in IDENTICAL)
-    left_1_delay = room["cover.left_1"].starts[0][0] - room["cover.left_2"].starts[0][0]
+    assert len({room[eid].starts()[0][0] for eid in IDENTICAL}) == 1
+    assert all(room[eid].commanded() == [] for eid in IDENTICAL)
+    left_1_delay = (
+        room["cover.left_1"].starts()[0][0] - room["cover.left_2"].starts()[0][0]
+    )
     assert left_1_delay == pytest.approx(8, abs=0.5)
     assert set(room.positions_pct_by_id().values()) == {100}
     assert room.worst_misalignment() <= HEIGHT_TOLERANCE
@@ -1091,9 +1093,11 @@ async def test_living_room_all_goes_to_half_with_the_scene(
     await room.run_until_still()
 
     assert room.scenes[OPEN_IDENTICAL].activations == 1
-    assert len({room[eid].starts[0][0] for eid in IDENTICAL}) == 1
-    assert all(room[eid].commanded == [50] for eid in IDENTICAL)
-    left_1_delay = room["cover.left_1"].starts[0][0] - room["cover.left_2"].starts[0][0]
+    assert len({room[eid].starts()[0][0] for eid in IDENTICAL}) == 1
+    assert all(room[eid].commanded() == [50] for eid in IDENTICAL)
+    left_1_delay = (
+        room["cover.left_1"].starts()[0][0] - room["cover.left_2"].starts()[0][0]
+    )
     assert left_1_delay == pytest.approx(8, abs=0.5)
     positions = room.positions_pct_by_id()
     assert {positions[eid] for eid in IDENTICAL} == {50}
@@ -1140,7 +1144,7 @@ async def test_leader_is_commanded_at_once(
 
     await room.command("close_cover")
 
-    assert room["cover.left_1"].starts, "the leader waited for a timer"
+    assert room["cover.left_1"].starts(), "the leader waited for a timer"
 
 
 async def test_level_followers_start_together(
@@ -1181,8 +1185,8 @@ async def test_level_followers_start_together(
     room.history.clear()
     await room.run_until_still()
 
-    lead_start = room["cover.lead"].starts[0][0]
-    a_start = room["cover.a"].starts[0][0]
+    lead_start = room["cover.lead"].starts()[0][0]
+    a_start = room["cover.a"].starts()[0][0]
     assert started_together(room, ["cover.a", "cover.b"])
     assert a_start - lead_start == pytest.approx(15, abs=0.5)  # 30 in at 2 in/s
     # Level from when they joined until each reached its sill.
