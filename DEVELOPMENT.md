@@ -98,7 +98,9 @@ When adding or changing behavior:
 When fixing a bug, reproduce it first: write the scenario that shows the
 failure, run it and see it fail for the reason you expect, then fix the code
 and see the same test pass. A test written after the fix may never have been
-able to fail.
+able to fail. Commit the test with the fix, though, not on its own: every
+commit should pass the checks. Changes that alter no behavior, such as
+extending the simulator, can go first in a commit of their own.
 
 The simulator fires timers with `async_fire_time_changed_exact`: the plain
 `async_fire_time_changed` bumps the time by up to 0.5 s (to suit HA's polling
