@@ -66,6 +66,24 @@ report stopping about 1% past it).
 - **The stop-report range lasts for the whole move.** While a shade's reports
   along its last move are accepted, an outside command that sends it within
   that range isn't noticed for the rest of the move.
+- **Short-move redirects count only their own level group's commands.** A
+  starter is skipped when the bridge would get to its shades' targets too
+  late, but only the presses and commands of that level group are counted.
+  Shades opening and closing that start at the same moment share the
+  bridge's queue, so a starter for one could still be redirected late.
+- **A run can end before its commands are sent.** In a 1% move on the left
+  shades, the run's 0.2 s were up before the bridge had finished sending its
+  commands (the last landed about 0.06 s later). Nothing went wrong, but the
+  group stopped following the plan while shades were still being started.
+- **Reports can arrive after a later command.** In the same move, left_2
+  reported the Pico's 0% after its 84% command had already been sent, so the
+  bridge's reports can be out of order with its commands. Harmless there.
+
+## Settings to consider
+
+- **The bridge's time per command.** Fixed at 0.15 s (`BRIDGE_COMMAND_S`),
+  which decides when a move is too short to redirect after a starter. A
+  slower or busier bridge might need more.
 
 ## Enhancements
 

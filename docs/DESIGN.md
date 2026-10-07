@@ -265,6 +265,13 @@ toward a position that isn't its target (a Pico's endpoint when going
 partway, or a scene's position) is sent its target straight after: a shade
 already moving keeps going and stops at the newly commanded position, whether
 that's short of or beyond where it was heading (verified on Serena shades).
+That target has to arrive before the shade gets there, though, or it goes
+past and comes back: on a 1% move, the Pico's Off took 0.07 s and the two
+targets after it 0.08 s and 0.23 s, by when the shades had gone about 1% too
+far. So a starter is only used if each shade it sends past its target would
+still be moving after the presses and commands due with it, at 0.15 s each,
+plus one more (`_redirected_in_time`). On a move that short, separate
+commands start the shades close enough together anyway.
 Everything due at the same moment goes out together: starters first, then
 commands to shades starting to move, then stops for held shades, then shades
 already where they should be. The bridge handles commands one at a time
