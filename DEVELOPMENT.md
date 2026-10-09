@@ -211,6 +211,12 @@ cp /tmp/icon_256.png custom_components/aligned_shade_group/brand/icon.png
 cp /tmp/icon_512.png custom_components/aligned_shade_group/brand/icon@2x.png
 ```
 
+The animations in `assets/` (`shades-cover-group.svg` and `shades-aligned.svg`,
+the same shades going to 50% and back, as a plain cover group and as an
+aligned group) are generated in the icon's style by
+[assets/make_animations.py](assets/make_animations.py); edit the script and
+run `python assets/make_animations.py` rather than editing the SVGs.
+
 ## Releasing
 
 1. Bump `version` in `custom_components/aligned_shade_group/manifest.json`.

@@ -17,7 +17,13 @@ send every shade the same percentage. Set one to 50% and each shade goes to 50%
 of *its own* travel, so their bottom edges (hemlines) end up at different
 heights. Aligned Shade Group works out the position that puts each shade's
 hemline at the same height, and times their starts so they stay level while
-moving. Roller shades' hemlines move faster near the top, where the roll is
+moving.
+
+| Cover group | Aligned Shade Group |
+|:---:|:---:|
+| <img src="https://raw.githubusercontent.com/alexblanck/aligned-shade-group/main/assets/shades-cover-group.svg" alt="Three shades of different sizes set to 50% by a cover group, ending at different heights" width="256"> | <img src="https://raw.githubusercontent.com/alexblanck/aligned-shade-group/main/assets/shades-aligned.svg" alt="The same shades set to 50% by Aligned Shade Group, meeting and moving level" width="256"> |
+
+Roller shades' hemlines move faster near the top, where the roll is
 thickest. Aligned Shade Group can't change that, but does take it into account
 when working out each shade's position, so their hemlines still line up.
 
