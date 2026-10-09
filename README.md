@@ -40,6 +40,14 @@ instead of the group in every automation. Aligned Shade Group uses your Picos
 and scenes for you: it starts the shades using a Pico or scene, then sends
 each its exact position once they're moving.
 
+<div align="center">
+
+| Cover group | Aligned Shade Group |
+|:---:|:---:|
+| <img src="https://raw.githubusercontent.com/alexblanck/aligned-shade-group/main/assets/animations/same-size-cover-group.svg" alt="Three same-size shades set to 50% by a cover group, starting one after another" width="256"> | <img src="https://raw.githubusercontent.com/alexblanck/aligned-shade-group/main/assets/animations/same-size-aligned.svg" alt="The same shades set to 50% by Aligned Shade Group, starting together and moving level" width="256"> |
+
+</div>
+
 ## Install and configure
 
 1. HACS → ⋮ → Custom repositories → add
