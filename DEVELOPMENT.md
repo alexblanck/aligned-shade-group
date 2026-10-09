@@ -54,6 +54,18 @@ GitHub Actions runs the same checks on every push to `main` and every pull
 request ([.github/workflows/checks.yml](.github/workflows/checks.yml)), with
 formatting checked rather than applied (`ruff format --check`).
 
+A second workflow ([.github/workflows/validate.yml](.github/workflows/validate.yml))
+runs the validations HACS requires for its default list: the
+[HACS action](https://www.hacs.xyz/docs/publish/action/) (repository
+description, topics and issues, `hacs.json`, the brand icon) and Home
+Assistant's [hassfest](https://developers.home-assistant.io/blog/2020/04/16/hassfest/)
+(manifest, translations, config flow). It also runs nightly, since hassfest
+tracks Home Assistant's beta. To run hassfest locally, clone
+[home-assistant/core](https://github.com/home-assistant/core) and, from that
+checkout, run `python -m script.hassfest --integration-path
+<this repo>/custom_components/aligned_shade_group` with this repo's venv
+active.
+
 Handy pytest variations:
 
 ```bash

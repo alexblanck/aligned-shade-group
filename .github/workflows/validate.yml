@@ -1,0 +1,31 @@
+# The validations HACS requires before a repository can join its default list:
+# the HACS action (repository settings, hacs.json, brand icon) and Home
+# Assistant's hassfest (manifest, translations, config flow). Runs nightly too,
+# since hassfest tracks Home Assistant's beta and can start failing on its own.
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: home-assistant/actions/hassfest@master
