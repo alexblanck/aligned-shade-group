@@ -17,6 +17,7 @@ How to work on Aligned Shade Group. For how alignment and motion work, see
 | `custom_components/aligned_shade_group/translations/en.json` | UI text for those screens |
 | `tests/sim.py` | Simulated shades and Pico used by the scenario tests |
 | `tests/test_room.py` | End-to-end scenarios (most tests live here) |
+| `docs/INSTALLATION.md` | Installation, setup and troubleshooting for users (linked from the README) |
 | `docs/DESIGN.md` | Design notes and decisions |
 | `docs/IDEAS.md` | Known problems and ideas for later |
 
@@ -187,7 +188,7 @@ Ways to run unreleased code:
 - **Manual:** copy `custom_components/aligned_shade_group` into your Home
   Assistant config's `custom_components/` folder and restart.
 
-Turn on debug logging (see the README) to see each plan the group makes: the
+Turn on debug logging (see [docs/INSTALLATION.md](docs/INSTALLATION.md#troubleshooting)) to see each plan the group makes: the
 positions it planned from, which Picos and scenes it used, every shade
 command with its delay, and what the shades report while it runs.
 
