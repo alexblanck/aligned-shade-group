@@ -17,12 +17,16 @@ window shades of different sizes into a single `cover` entity whose bottom edges
 Picos and scenes are optional; without them the group still aligns shades
 using per-shade commands.
 
-Some shade systems do this natively: Lutron's [Intelligent Hembar
-Alignment](https://www.lutron.com/us/en/window-treatments/shades/roller-shades)
-(IHA, on lines such as Sivoia QS and Palladiom) monitors shade speed hundreds of
-times per second to keep grouped shades within 1/8 in (3 mm), in motion or
-stopped, even when windows are different sizes. This integration is a
-workaround for shades without it, such as Lutron Serena.
+Lutron's commercial shades do this in hardware ([white
+paper](https://assets.lutron.com/a/documents/367-2063.pdf)). Intelligent
+Hembar Alignment (IHA, on Sivoia QS and QED) controls each motor's speed and
+compensates for the roll's changing diameter, so every hembar moves at the
+same steady speed and similar-length shades stay within 1/8 in (3 mm).
+*Advanced* IHA adds a Quantum system to keep shades of uneven lengths
+aligned, such as under a sloped ceiling. This integration does roughly what
+Advanced IHA does, in software, for shades without either, such as Lutron
+Serena: it assumes the shades already move at the same speed, and the
+optional roller-curve correction stands in for IHA's roll compensation.
 
 ## Target hardware and assumptions
 
