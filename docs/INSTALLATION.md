@@ -57,7 +57,7 @@ Setup asks for:
   rolls match (see [Supported shades](#supported-shades)).
 - **Optionally, Picos and scenes** (see below).
 
-To change any of this later, use **Reconfigure** on the group's entry.
+To change any of this later, use **Configure** on the group's entry.
 
 ## How the group behaves
 
@@ -87,7 +87,7 @@ A Pico or Lutron scene starts several shades with one command, so they start
 at exactly the same moment. When some of the group's shades start level, the
 group uses any Pico or scene that covers just those shades, and commands the
 rest itself. They're added on the last screen of the group's setup (or
-Reconfigure).
+Configure).
 
 - **Pico:** pair it in the Lutron app to some or all of the group's shades.
   In Home Assistant, open the Pico's device (Lutron Caseta integration) and

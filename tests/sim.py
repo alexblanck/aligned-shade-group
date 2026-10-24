@@ -24,7 +24,7 @@ from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.cover import CoverEntity, CoverEntityFeature
 from homeassistant.components.scene import Scene
-from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigEntry, ConfigFlow
+from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import section
@@ -462,8 +462,8 @@ class Room:
         flow = await self.hass.config_entries.flow.async_init(
             DOMAIN, context={"source": "user"}
         )
-        flow = await self.hass.config_entries.flow.async_configure(
-            flow["flow_id"], {"name": "Living Room", "shades": list(self.shades)}
+        flow = await configure(
+            self.hass, flow, {"name": "Living Room", "shades": list(self.shades)}
         )
         flow = await self.answer_shade_steps(flow)
         flow = await self.add_controls(flow)
@@ -472,13 +472,10 @@ class Room:
         await self.hass.async_block_till_done()
         self.entry = self.hass.config_entries.async_entries(DOMAIN)[0]
 
-    async def start_reconfigure(self) -> Any:
-        """Open the group's Reconfigure form, like a user would."""
+    async def start_editing(self) -> Any:
+        """Open the group's Configure form, like a user would."""
         assert self.entry is not None
-        return await self.hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": SOURCE_RECONFIGURE, "entry_id": self.entry.entry_id},
-        )
+        return await self.hass.config_entries.options.async_init(self.entry.entry_id)
 
     async def answer_shade_steps(self, flow: Any) -> Any:
         """Enter each shade's heights, then the tallest shade's travel time.
@@ -486,11 +483,11 @@ class Room:
         The travel time entered is the tallest shade's real one unless the
         room was built with a different `configured_travel_time_s`.
         """
-        configure = self.hass.config_entries.flow.async_configure
         for shade in self.shades.values():
             assert flow["step_id"] in ("shade", "shade_prefilled"), flow
             flow = await configure(
-                flow["flow_id"],
+                self.hass,
+                flow,
                 {
                     "open_height": shade.spec.open_height(),
                     "closed_height": shade.spec.closed_height(),
@@ -511,38 +508,37 @@ class Room:
             }
         else:
             answers["roller_curve"] = {}
-        return await configure(flow["flow_id"], answers)
+        return await configure(self.hass, flow, answers)
 
     async def choose(self, flow: Any, option: str) -> Any:
         """Pick an option on a menu screen."""
         assert flow["type"] == "menu", flow
-        return await self.hass.config_entries.flow.async_configure(
-            flow["flow_id"], {"next_step_id": option}
-        )
+        return await configure(self.hass, flow, {"next_step_id": option})
 
     async def remove_all_controls(self, flow: Any) -> Any:
         """On the Picos and scenes menu, remove every Pico and scene."""
         flow = await self.choose(flow, "remove_controls")
         options = flow["data_schema"].schema["controls"].config["options"]
-        return await self.hass.config_entries.flow.async_configure(
-            flow["flow_id"], {"controls": [option["value"] for option in options]}
+        return await configure(
+            self.hass, flow, {"controls": [option["value"] for option in options]}
         )
 
     async def add_controls(self, flow: Any) -> Any:
         """On the Picos and scenes menu, add the room's Pico and scenes."""
-        configure = self.hass.config_entries.flow.async_configure
         assert flow["step_id"] in CONTROLS_MENUS, flow
         if self.pico:
             flow = await self.choose(flow, "add_pico")
             flow = await configure(
-                flow["flow_id"],
+                self.hass,
+                flow,
                 {"device_id": self.pico_device_id(), "shades": self.pico_shades},
             )
         for scene in self.scenes.values():
             (position_pct,) = {target_pct for _, target_pct in scene._targets}
             flow = await self.choose(flow, "add_scene")
             flow = await configure(
-                flow["flow_id"],
+                self.hass,
+                flow,
                 {
                     "scene": scene.entity_id,
                     "shades": [shade.entity_id for shade, _ in scene._targets],
@@ -730,6 +726,20 @@ def prefilled_answers(flow: Any) -> dict[str, Any]:
         return result
 
     return answers(flow["data_schema"])
+
+
+async def configure(
+    hass: HomeAssistant, flow: Any, user_input: dict[str, Any] | None = None
+) -> Any:
+    """Submit a form or menu, in creating a group or in editing one (an
+    options flow, whose handler is the entry rather than the domain).
+    """
+    manager = (
+        hass.config_entries.flow
+        if flow["handler"] == DOMAIN
+        else hass.config_entries.options
+    )
+    return await manager.async_configure(flow["flow_id"], user_input)
 
 
 class _PicoEntryFlow(ConfigFlow):

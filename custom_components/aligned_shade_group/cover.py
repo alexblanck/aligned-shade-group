@@ -500,7 +500,7 @@ class AlignedShadeGroup(CoverEntity):
     def _async_update_missing_issue(self) -> list[str]:
         """Raise or clear the repair issue for missing shades and controls.
 
-        Fixing them means reconfiguring the group. Returns them.
+        Fixing them means editing the group (Configure). Returns them.
         """
         missing = self._missing([*self._entity_ids, *self._control_entities()])
         issue_id = missing_entities_issue_id(self._entry.entry_id)
@@ -538,7 +538,7 @@ class AlignedShadeGroup(CoverEntity):
             if missing := self._missing(control.entities()):
                 _LOGGER.warning(
                     "%s: not using %s, which is missing or disabled; "
-                    "reconfigure the group to choose it again",
+                    "edit the group (Configure) to choose it again",
                     self.entity_id,
                     ", ".join(missing),
                 )

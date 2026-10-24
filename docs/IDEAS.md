@@ -149,8 +149,8 @@ height steps and the roll curve.
 
 ### Follow entity renames automatically
 
-Today a renamed shade or Pico button raises a repair issue asking to
-reconfigure. The group could instead listen for renames and update its stored
+Today a renamed shade or Pico button raises a repair issue asking to edit
+the group. The group could instead listen for renames and update its stored
 entity ids itself.
 
 ### Shades whose rolls don't match

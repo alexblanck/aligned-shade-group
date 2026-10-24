@@ -1,4 +1,4 @@
-"""Setup and Reconfigure screens for Aligned Shade Group."""
+"""Setup and Configure screens for Aligned Shade Group."""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ import probatio as vol
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.components.cover import CoverEntityFeature
 from homeassistant.config_entries import (
-    SOURCE_RECONFIGURE,
+    ConfigEntry,
+    ConfigEntryBaseFlow,
     ConfigFlow,
     ConfigFlowResult,
+    OptionsFlow,
 )
 from homeassistant.const import (
     ATTR_FRIENDLY_NAME,
@@ -20,7 +22,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     Platform,
 )
-from homeassistant.core import HomeAssistant, split_entity_id
+from homeassistant.core import HomeAssistant, callback, split_entity_id
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -255,22 +257,21 @@ def _ranges_overlap(shades: list[dict[str, Any]]) -> bool:
     return bool(highest_closed < lowest_open)
 
 
-class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Create an aligned shade group, or edit one.
+class _GroupFlow(ConfigEntryBaseFlow):
+    """The steps shared by creating a group and editing one.
 
-    Creating starts at the "user" step and editing (Reconfigure, in the
-    entry's menu) at the "reconfigure" step. Both choose the name and shades,
-    then run one "shade" step per shade to collect its heights, then a
-    "travel" step that measures the tallest shade: its travel time (all shades
-    are assumed to move at the same speed) and, optionally, its 50% height.
-    Those are stored with that shade. Last, a "controls" menu adds the Picos
-    and Lutron scenes that can start several shades at once.
+    Creating (the config flow) starts at the "user" step and editing
+    (Configure, on the group's entry: an options flow) at the "init" step.
+    Both choose the name and shades, then run one "shade" step per shade to
+    collect its heights, then a "travel" step that measures the tallest shade:
+    its travel time (all shades are assumed to move at the same speed) and,
+    optionally, its 50% height. Those are stored with that shade. Last, a
+    "controls" menu adds the Picos and Lutron scenes that can start several
+    shades at once, and "save" hands the settings to `_save`.
 
     Each form opens with its prefill (saved settings, when editing), or, when
     shown again after an error, with what was just entered: `user_input or`.
     """
-
-    VERSION = 3
 
     def __init__(self) -> None:
         """Initialize the flow."""
@@ -287,24 +288,6 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         # the shades were chosen, and, when editing, those saved before.
         self._new_shades: dict[str, dict[str, Any]] = {}
         self._old_shades: dict[str, dict[str, Any]] = {}
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Create a group: choose its name and shades."""
-        return await self._async_step_choose_shades("user", user_input, prefill={})
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Edit a group, starting from its current settings."""
-        entry = self._get_reconfigure_entry()
-        self._old_shades = {
-            shade[CONF_ENTITY_ID]: shade for shade in entry.data[CONF_SHADES]
-        }
-        self._old_controls = list(entry.data[CONF_CONTROLS])
-        prefill = {FIELD_NAME: entry.title, FIELD_SHADES: list(self._old_shades)}
-        return await self._async_step_choose_shades("reconfigure", user_input, prefill)
 
     async def _async_step_choose_shades(
         self,
@@ -663,12 +646,13 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Create the group, or update the one being edited."""
-        data = {CONF_SHADES: self._shades_to_save, CONF_CONTROLS: self._controls}
-        if self.source == SOURCE_RECONFIGURE:
-            return self.async_update_reload_and_abort(
-                self._get_reconfigure_entry(), title=self._name, data=data
-            )
-        return self.async_create_entry(title=self._name, data=data)
+        return self._save(
+            {CONF_SHADES: self._shades_to_save, CONF_CONTROLS: self._controls}
+        )
+
+    def _save(self, data: dict[str, Any]) -> ConfigFlowResult:
+        """Store the group's settings, as each flow does."""
+        raise NotImplementedError
 
     def _check_control_shades(self, shades: list[str]) -> str | None:
         """An error key if a Pico or scene's shades aren't valid, or None."""
@@ -729,3 +713,55 @@ class AlignedShadeGroupConfigFlow(ConfigFlow, domain=DOMAIN):
             if state
             else entity_id
         )
+
+
+class AlignedShadeGroupConfigFlow(_GroupFlow, ConfigFlow, domain=DOMAIN):
+    """Create an aligned shade group."""
+
+    VERSION = 3
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Edit a group, from Configure on its entry."""
+        return AlignedShadeGroupOptionsFlow()
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create a group: choose its name and shades."""
+        return await self._async_step_choose_shades("user", user_input, prefill={})
+
+    def _save(self, data: dict[str, Any]) -> ConfigFlowResult:
+        return self.async_create_entry(title=self._name, data=data)
+
+
+class AlignedShadeGroupOptionsFlow(_GroupFlow, OptionsFlow):
+    """Edit an aligned shade group.
+
+    Settings define the group, so they're stored in the entry's data like
+    those of a new group, not in its options, which stay empty.
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit a group, starting from its current settings."""
+        entry = self.config_entry
+        self._old_shades = {
+            shade[CONF_ENTITY_ID]: shade for shade in entry.data[CONF_SHADES]
+        }
+        self._old_controls = list(entry.data[CONF_CONTROLS])
+        prefill = {FIELD_NAME: entry.title, FIELD_SHADES: list(self._old_shades)}
+        return await self._async_step_choose_shades("init", user_input, prefill)
+
+    def _save(self, data: dict[str, Any]) -> ConfigFlowResult:
+        """Update the group and reload it with its new settings.
+
+        Ends by aborting, so the dialog can say the group was reloaded;
+        ending with an entry would also replace its options.
+        """
+        entry = self.config_entry
+        self.hass.config_entries.async_update_entry(entry, title=self._name, data=data)
+        self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        return self.async_abort(reason="saved")

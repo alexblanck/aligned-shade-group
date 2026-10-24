@@ -371,7 +371,7 @@ async def test_renames_raise_and_clear_the_issue_without_a_move(
     assert issue is not None
     assert issue.translation_placeholders["entities"] == f"- {LOW_SILL}"
 
-    # Renamed back to the id the group knows: fixed without reconfiguring.
+    # Renamed back to the id the group knows: fixed without editing the group.
     registry.async_update_entity("cover.renamed", new_entity_id=LOW_SILL)
     await room.run(2)
     assert missing_entities_issue(hass, room) is None

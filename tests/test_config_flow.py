@@ -6,6 +6,8 @@ is tested in test_room.py.
 """
 
 import copy
+import json
+from pathlib import Path
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
@@ -31,10 +33,16 @@ from .sim import (
     GROUP,
     HEIGHT_TOLERANCE,
     build_room,
+    configure,
     living_room_all,
     matched_rolls,
     prefilled_answers,
     same_tops,
+)
+
+TRANSLATIONS = (
+    Path(__file__).parent.parent
+    / "custom_components/aligned_shade_group/translations/en.json"
 )
 
 FEATURES = (
@@ -63,20 +71,15 @@ async def start_flow(hass: HomeAssistant) -> dict[str, Any]:
 
 
 async def submit_group(hass: HomeAssistant, flow: dict[str, Any]) -> dict[str, Any]:
-    return await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {"name": "x", "shades": [HIGH_SILL, LOW_SILL]}
-    )
+    return await configure(hass, flow, {"name": "x", "shades": [HIGH_SILL, LOW_SILL]})
 
 
 async def reach_controls(hass: HomeAssistant) -> dict[str, Any]:
     """Set up the two shades, through to the Picos and scenes menu."""
-    configure = hass.config_entries.flow.async_configure
     result = await submit_group(hass, await start_flow(hass))
     for heights in ({"open_height": 84, "closed_height": 24}, {"closed_height": 12}):
-        result = await configure(result["flow_id"], {"open_height": 84, **heights})
-    result = await configure(
-        result["flow_id"], {"travel_time_s": 36, "roller_curve": {}}
-    )
+        result = await configure(hass, result, {"open_height": 84, **heights})
+    result = await configure(hass, result, {"travel_time_s": 36, "roller_curve": {}})
     assert result["step_id"] in CONTROLS_MENUS
     return result
 
@@ -86,9 +89,7 @@ async def choose(
 ) -> dict[str, Any]:
     """Pick an option on a menu screen."""
     assert result["type"] == "menu", result
-    return await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": option}
-    )
+    return await configure(hass, result, {"next_step_id": option})
 
 
 def add_pico(
@@ -119,9 +120,7 @@ def add_pico(
 
 async def test_too_few_shades(hass: HomeAssistant) -> None:
     flow = await start_flow(hass)
-    result = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {"name": "x", "shades": [HIGH_SILL]}
-    )
+    result = await configure(hass, flow, {"name": "x", "shades": [HIGH_SILL]})
     assert result["errors"] == {"base": "too_few_shades"}
 
 
@@ -129,9 +128,7 @@ async def add_pico_answers(
     hass: HomeAssistant, result: dict[str, Any], device_id: str, shades: list[str]
 ) -> dict[str, Any]:
     result = await choose(hass, result, "add_pico")
-    return await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"device_id": device_id, "shades": shades}
-    )
+    return await configure(hass, result, {"device_id": device_id, "shades": shades})
 
 
 async def test_pico_needs_on_stop_and_off_buttons(hass: HomeAssistant) -> None:
@@ -160,8 +157,9 @@ async def test_picos_and_scenes_are_stored_with_their_shades(
     assert result["step_id"] in CONTROLS_MENUS
     assert "Living Room Pico" in result["description_placeholders"]["controls"]
     result = await choose(hass, result, "add_scene")
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
+    result = await configure(
+        hass,
+        result,
         {"scene": "scene.open_both", "shades": [HIGH_SILL, LOW_SILL], "position": 100},
     )
     # Listed on the menu: each in bold, a scene's position once, then its shades.
@@ -198,13 +196,8 @@ async def test_picos_and_scenes_can_only_be_added_once(hass: HomeAssistant) -> N
 
     result = await reach_controls(hass)
     scene = {"scene": "scene.open_both", "shades": [HIGH_SILL], "position": 100}
-    configure = hass.config_entries.flow.async_configure
-    result = await configure(
-        (await choose(hass, result, "add_scene"))["flow_id"], scene
-    )
-    result = await configure(
-        (await choose(hass, result, "add_scene"))["flow_id"], scene
-    )
+    result = await configure(hass, await choose(hass, result, "add_scene"), scene)
+    result = await configure(hass, await choose(hass, result, "add_scene"), scene)
     assert result["errors"] == {"base": "control_already_added"}
 
 
@@ -215,15 +208,15 @@ async def test_picos_and_scenes_can_be_changed_or_removed_one_at_a_time(
     pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
     result = await add_pico_answers(hass, result, pico, [LOW_SILL])
     result = await choose(hass, result, "add_scene")
-    configure = hass.config_entries.flow.async_configure
     result = await configure(
-        result["flow_id"],
+        hass,
+        result,
         {"scene": "scene.open_both", "shades": [HIGH_SILL, LOW_SILL], "position": 100},
     )
 
     # Change the scene: its form opens with its current settings.
     result = await choose(hass, result, "change_control")
-    result = await configure(result["flow_id"], {"control": "1"})
+    result = await configure(hass, result, {"control": "1"})
     assert result["step_id"] == "change_scene"
     assert prefilled_answers(result) == {
         "scene": "scene.open_both",
@@ -231,20 +224,21 @@ async def test_picos_and_scenes_can_be_changed_or_removed_one_at_a_time(
         "position": 100,
     }
     result = await configure(
-        result["flow_id"],
+        hass,
+        result,
         {"scene": "scene.open_both", "shades": [HIGH_SILL], "position": 50},
     )
 
     # The Pico's form opens with its device and shades.
     result = await choose(hass, result, "change_control")
-    result = await configure(result["flow_id"], {"control": "0"})
+    result = await configure(hass, result, {"control": "0"})
     assert result["step_id"] == "change_pico"
     assert prefilled_answers(result) == {"device_id": pico, "shades": [LOW_SILL]}
-    result = await configure(result["flow_id"], prefilled_answers(result))
+    result = await configure(hass, result, prefilled_answers(result))
 
     # Remove just the Pico.
     result = await choose(hass, result, "remove_controls")
-    result = await configure(result["flow_id"], {"controls": ["0"]})
+    result = await configure(hass, result, {"controls": ["0"]})
     result = await choose(hass, result, "save")
 
     assert result["data"]["controls"] == [
@@ -270,8 +264,9 @@ async def test_menu_suggests_shades_that_start_level_together(
 
     # A scene opening both covers the first; a Pico for both covers both.
     result = await choose(hass, result, "add_scene")
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
+    result = await configure(
+        hass,
+        result,
         {"scene": "scene.open_both", "shades": [HIGH_SILL, LOW_SILL], "position": 100},
     )
     assert result["step_id"] == "controls_configured_suggested"
@@ -290,10 +285,8 @@ async def test_living_room_all_suggests_opening_the_four_identical_shades(
     # the same height (all but left_1) start level opening from closed, and
     # nothing starts just them yet.
     room = await build_room(hass, freezer, living_room_all())
-    flow = await room.start_reconfigure()
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], prefilled_answers(flow)
-    )
+    flow = await room.start_editing()
+    flow = await configure(hass, flow, prefilled_answers(flow))
     flow = await room.answer_shade_steps(flow)
 
     assert flow["step_id"] == "controls_configured_suggested"
@@ -316,16 +309,12 @@ async def test_scene_with_different_positions_cannot_be_changed(
     hass.config_entries.async_update_entry(
         room.entry, data={**room.entry.data, "controls": [scene]}
     )
-    flow = await room.start_reconfigure()
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], prefilled_answers(flow)
-    )
+    flow = await room.start_editing()
+    flow = await configure(hass, flow, prefilled_answers(flow))
     flow = await room.answer_shade_steps(flow)
 
     flow = await room.choose(flow, "change_control")
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {"control": "0"}
-    )
+    flow = await configure(hass, flow, {"control": "0"})
     assert flow["step_id"] == "change_control"
     assert flow["errors"] == {"base": "scene_positions_differ"}
 
@@ -333,10 +322,9 @@ async def test_scene_with_different_positions_cannot_be_changed(
 async def test_leaving_the_pico_or_scene_empty_goes_back(
     hass: HomeAssistant,
 ) -> None:
-    configure = hass.config_entries.flow.async_configure
     for option in ("add_pico", "add_scene"):
         result = await choose(hass, await reach_controls(hass), option)
-        result = await configure(result["flow_id"], {"shades": [HIGH_SILL]})
+        result = await configure(hass, result, {"shades": [HIGH_SILL]})
         assert result["step_id"] == "controls", option
         assert result["description_placeholders"]["controls"] == ""
 
@@ -347,25 +335,24 @@ async def test_removing_or_changing_nothing_goes_back(hass: HomeAssistant) -> No
     result = await add_pico_answers(hass, result, pico, [LOW_SILL])
     result = await choose(hass, result, "remove_controls")
     # Nothing ticked: the form sends no value at all.
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    result = await configure(hass, result, {})
     assert result["step_id"] in CONTROLS_MENUS
     assert "Living Room Pico" in result["description_placeholders"]["controls"]
 
     # Likewise choosing nothing to change.
     result = await choose(hass, result, "change_control")
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    result = await configure(hass, result, {})
     assert result["step_id"] in CONTROLS_MENUS
 
 
 async def test_controls_need_shades_and_a_scene(hass: HomeAssistant) -> None:
     result = await reach_controls(hass)
     result = await choose(hass, result, "add_scene")
-    configure = hass.config_entries.flow.async_configure
     answers = {"scene": "scene.open_both", "shades": [], "position": 100}
-    result = await configure(result["flow_id"], answers)
+    result = await configure(hass, result, answers)
     assert result["errors"] == {"base": "no_control_shades"}
     answers = {**answers, "scene": "light.lamp", "shades": [HIGH_SILL]}
-    result = await configure(result["flow_id"], answers)
+    result = await configure(hass, result, answers)
     assert result["errors"] == {"base": "not_a_scene"}
 
 
@@ -382,8 +369,9 @@ async def test_shades_must_be_covers(hass: HomeAssistant) -> None:
     # The picker only offers covers, but submitted values aren't filtered.
     flow = await start_flow(hass)
     hass.states.async_set("light.lamp", "on", {"supported_features": 255})
-    result = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
+    result = await configure(
+        hass,
+        flow,
         {"name": "x", "shades": [HIGH_SILL, "light.lamp"]},
     )
     assert result["errors"] == {"base": "cover_unsupported"}
@@ -413,9 +401,7 @@ async def test_shades_are_prefilled_from_the_previous_one(
     assert result["step_id"] == "shade"
     assert prefilled_answers(result) == {}
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"open_height": 84, "closed_height": 24}
-    )
+    result = await configure(hass, result, {"open_height": 84, "closed_height": 24})
 
     # Shade 2 starts with shade 1's heights, and its description says so.
     assert result["step_id"] == "shade_prefilled"
@@ -425,9 +411,7 @@ async def test_shades_are_prefilled_from_the_previous_one(
 async def test_shade_heights_validated(hass: HomeAssistant) -> None:
     flow = await start_flow(hass)
     result = await submit_group(hass, flow)
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"open_height": 10, "closed_height": 20}
-    )
+    result = await configure(hass, result, {"open_height": 10, "closed_height": 20})
     assert result["errors"] == {"base": "closed_not_below_open"}
     assert result["description_placeholders"]["index"] == "1"
 
@@ -435,19 +419,13 @@ async def test_shade_heights_validated(hass: HomeAssistant) -> None:
 async def test_shade_ranges_must_overlap(hass: HomeAssistant) -> None:
     flow = await start_flow(hass)
     result = await submit_group(hass, flow)
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"open_height": 40, "closed_height": 10}
-    )
+    result = await configure(hass, result, {"open_height": 40, "closed_height": 10})
     # Stacked rather than side by side: no height is in both ranges.
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"open_height": 80, "closed_height": 50}
-    )
+    result = await configure(hass, result, {"open_height": 80, "closed_height": 50})
     assert result["errors"] == {"base": "ranges_do_not_overlap"}
     assert result["description_placeholders"]["index"] == "2"
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"open_height": 80, "closed_height": 20}
-    )
+    result = await configure(hass, result, {"open_height": 80, "closed_height": 20})
     assert result["step_id"] == "travel"
 
 
@@ -458,23 +436,22 @@ async def test_halfway_height_must_fit_a_roller(hass: HomeAssistant) -> None:
         {"closed_height": 24, "open_height": 84},
         {"closed_height": 12, "open_height": 84},
     ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], heights
-        )
+        result = await configure(hass, result, heights)
     assert result["step_id"] == "travel"
     # Tallest shade: 12 to 84, so 50% must be above 30 and at most the midpoint, 48.
     assert result["description_placeholders"]["low"] == "30"
     assert result["description_placeholders"]["high"] == "48"
 
     for too_far in (50, 30):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
+        result = await configure(
+            hass,
+            result,
             {"travel_time_s": 36, "roller_curve": {"halfway_height": too_far}},
         )
         assert result["errors"] == {"base": "halfway_out_of_range"}
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"travel_time_s": 36, "roller_curve": {"halfway_height": 44}}
+    result = await configure(
+        hass, result, {"travel_time_s": 36, "roller_curve": {"halfway_height": 44}}
     )
     result = await choose(hass, result, "save")
     assert result["type"] == "create_entry"
@@ -500,8 +477,8 @@ async def configure_shades(
     """Set up two shades with these (closed, open) heights; returns the travel step."""
     result = await submit_group(hass, await start_flow(hass))
     for closed, opened in heights:
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"closed_height": closed, "open_height": opened}
+        result = await configure(
+            hass, result, {"closed_height": closed, "open_height": opened}
         )
     assert result["step_id"] == "travel"
     return result
@@ -513,8 +490,8 @@ async def test_halfway_height_extends_to_shades_above_the_tallest(
     # The taller shade (20 to 80) doesn't reach the other's top (90); its
     # curve is extended up to it.
     result = await configure_shades(hass, [(50, 90), (20, 80)])
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"travel_time_s": 30, "roller_curve": {"halfway_height": 48}}
+    result = await configure(
+        hass, result, {"travel_time_s": 30, "roller_curve": {"halfway_height": 48}}
     )
     assert result["step_id"] in CONTROLS_MENUS
 
@@ -525,31 +502,29 @@ async def test_halfway_height_whose_curve_cannot_reach_every_shade(
     # A strong curve on the taller shade (40 to 100) flattens out at 37.5,
     # as if the roll ran out of fabric, short of the other shade's 30.
     result = await configure_shades(hass, [(40, 100), (30, 70)])
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"travel_time_s": 30, "roller_curve": {"halfway_height": 60}}
+    result = await configure(
+        hass, result, {"travel_time_s": 30, "roller_curve": {"halfway_height": 60}}
     )
     assert result["errors"] == {"base": "halfway_cant_reach"}
 
 
-async def test_reconfigure_applies_to_running_group(
+async def test_editing_applies_to_running_group(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     room = await build_room(hass, freezer, same_tops(), start_pct=100)
 
     # Rename the group and remove its Pico; the group reloads with both.
-    flow = await room.start_reconfigure()
-    assert flow["step_id"] == "reconfigure"
+    flow = await room.start_editing()
+    assert flow["step_id"] == "init"
     assert flow["description_placeholders"]["name"] == "Living Room"
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {"name": "Den", "shades": [HIGH_SILL, LOW_SILL]}
-    )
+    flow = await configure(hass, flow, {"name": "Den", "shades": [HIGH_SILL, LOW_SILL]})
     flow = await room.answer_shade_steps(flow)
     # The saved Pico is listed; remove it.
     assert "Pico" in flow["description_placeholders"]["controls"]
     flow = await room.remove_all_controls(flow)
     flow = await room.choose(flow, "save")
     assert flow["type"] == "abort", flow
-    assert flow["reason"] == "reconfigure_successful"
+    assert flow["reason"] == "saved"
     await hass.async_block_till_done()
     assert room.entry.title == "Den"
     assert room.entry.data["controls"] == []
@@ -576,7 +551,7 @@ async def test_shade_picker_offers_only_shades(
     assert shade_filter["device_class"] == ["shade", "blind", "shutter"]
 
 
-async def test_reconfigure_fixes_renamed_pico_buttons(
+async def test_editing_fixes_renamed_pico_buttons(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     room = await build_room(hass, freezer, same_tops(), start_pct=100)
@@ -590,32 +565,31 @@ async def test_reconfigure_fixes_renamed_pico_buttons(
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
 
     # Adding the same Pico again finds its buttons under their new names.
-    flow = await room.start_reconfigure()
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], prefilled_answers(flow)
-    )
+    flow = await room.start_editing()
+    flow = await configure(hass, flow, prefilled_answers(flow))
     flow = await room.answer_shade_steps(flow)
     flow = await room.remove_all_controls(flow)
     flow = await room.add_controls(flow)
     flow = await room.choose(flow, "save")
     await hass.async_block_till_done()
 
-    assert flow["reason"] == "reconfigure_successful", flow
+    assert flow["reason"] == "saved", flow
     (pico,) = room.entry.data["controls"]
     assert pico["stop"] == "button.pico_stop_renamed"
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
 
 
-async def test_reconfigure_mid_run(
+async def test_editing_mid_run(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     room = await build_room(hass, freezer, same_tops())
 
     await room.command("open_cover")
     await room.run(3)  # high-sill shade's start still pending
-    flow = await room.start_reconfigure()
-    flow = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
+    flow = await room.start_editing()
+    flow = await configure(
+        hass,
+        flow,
         {"name": "Living Room", "shades": [HIGH_SILL, LOW_SILL]},
     )
     flow = await room.answer_shade_steps(flow)
@@ -640,24 +614,35 @@ async def test_group_has_its_own_device(
     assert device.config_entry_id == room.entry.entry_id
 
 
-async def test_reconfigure_changes_only_what_was_edited(
+async def test_editing_changes_only_what_was_edited(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    # Three shades with a curve and a Pico, then Reconfigure changing only the
+    # Three shades with a curve and a Pico, then editing it changing only the
     # name and accepting every other prefilled answer as it is.
     room = await build_room(hass, freezer, matched_rolls(), pico=True, start_pct=50)
     # Deep-copied in case a change ever edits the stored data in place.
     saved = copy.deepcopy(dict(room.entry.data))
 
-    flow = await room.start_reconfigure()
-    configure = hass.config_entries.flow.async_configure
-    flow = await configure(flow["flow_id"], {**prefilled_answers(flow), "name": "Den"})
+    flow = await room.start_editing()
+    flow = await configure(hass, flow, {**prefilled_answers(flow), "name": "Den"})
     while flow["type"] == "form":
-        flow = await configure(flow["flow_id"], prefilled_answers(flow))
+        flow = await configure(hass, flow, prefilled_answers(flow))
     flow = await room.choose(flow, "save")  # keeping the saved Pico
     await hass.async_block_till_done()
 
-    assert flow["reason"] == "reconfigure_successful", flow
+    assert flow["reason"] == "saved", flow
     assert room.entry.title == "Den"
     assert room.entry.data == saved
     assert room.entry.data["controls"], "the Pico was kept"
+    assert room.entry.options == {}  # settings stay in the data
+
+
+def test_editing_screens_match_setup_screens() -> None:
+    # Home Assistant looks up an options flow's text separately from its
+    # config flow's, so the shared screens' text is copied; keep it in sync.
+    strings = json.loads(TRANSLATIONS.read_text())
+    setup, editing = strings["config"], strings["options"]
+    assert {k: v for k, v in setup["step"].items() if k != "user"} == {
+        k: v for k, v in editing["step"].items() if k != "init"
+    }
+    assert setup["error"] == editing["error"]

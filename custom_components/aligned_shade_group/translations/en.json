@@ -12,7 +12,155 @@
           "shades": "The side-by-side shades to keep level. If one is missing, check its “Show as” in its entity settings."
         }
       },
-      "reconfigure": {
+      "shade": {
+        "title": "{name} (shade {index} of {count})",
+        "description": "Where is this shade's bottom edge (hemline) when fully open and when fully closed? Measure every shade from the same point, such as inches from the floor.",
+        "data": {
+          "open_height": "Open height",
+          "closed_height": "Closed height"
+        }
+      },
+      "shade_prefilled": {
+        "title": "{name} (shade {index} of {count})",
+        "description": "Where is this shade's bottom edge (hemline) when fully open and when fully closed? Measure every shade from the same point, such as inches from the floor.\n\nPrefilled from the previous shade.",
+        "data": {
+          "open_height": "Open height",
+          "closed_height": "Closed height"
+        }
+      },
+      "travel": {
+        "title": "Travel time",
+        "description": "How long does {name}, the tallest shade, take to go from fully closed to fully open?\n\nAll shades are assumed to move at the same speed.",
+        "data": {
+          "travel_time_s": "Full travel time"
+        },
+        "data_description": {
+          "travel_time_s": "In seconds."
+        },
+        "sections": {
+          "roller_curve": {
+            "name": "Roller curve correction",
+            "description": "Most roller shade positions count motor turns, not distance. The roll is fattest when open, so the hemline drops faster near the top, and 50% sits above the halfway point. Set {name} to 50% and enter its hemline height.\n\nThe shades' rolls are assumed to match: same fabric and tube, and equally full when the hemlines are level.",
+            "data": {
+              "halfway_height": "Hemline height at 50%"
+            },
+            "data_description": {
+              "halfway_height": "Between {low} and {high}. Leave empty if your hemlines move at a constant speed."
+            }
+          }
+        }
+      },
+      "controls": {
+        "title": "Picos and scenes",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}",
+        "menu_options": {
+          "add_pico": "Add a Pico",
+          "add_scene": "Add a scene",
+          "change_control": "Change a Pico or scene",
+          "remove_controls": "Remove Picos or scenes",
+          "save": "Done"
+        }
+      },
+      "controls_configured": {
+        "title": "Picos and scenes",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Configured{controls}",
+        "menu_options": {
+          "add_pico": "Add a Pico",
+          "add_scene": "Add a scene",
+          "change_control": "Change a Pico or scene",
+          "remove_controls": "Remove Picos or scenes",
+          "save": "Done"
+        }
+      },
+      "controls_configured_suggested": {
+        "title": "Picos and scenes",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}\n\n### Configured{controls}",
+        "menu_options": {
+          "add_pico": "Add a Pico",
+          "add_scene": "Add a scene",
+          "change_control": "Change a Pico or scene",
+          "remove_controls": "Remove Picos or scenes",
+          "save": "Done"
+        }
+      },
+      "add_pico": {
+        "title": "Add a Pico",
+        "description": "A shade Pico (with a middle button) paired on the Caseta bridge. If it isn't listed, its buttons are probably still disabled (Home Assistant's default): enable On, Stop and Off on the Pico's device page.",
+        "data": {
+          "device_id": "Pico",
+          "shades": "Shades it's paired to"
+        },
+        "data_description": {
+          "device_id": "Its On, Stop and Off buttons are found automatically. Leave it empty to go back."
+        }
+      },
+      "change_pico": {
+        "title": "Change a Pico",
+        "description": "A shade Pico (with a middle button) paired on the Caseta bridge. If it isn't listed, its buttons are probably still disabled (Home Assistant's default): enable On, Stop and Off on the Pico's device page.",
+        "data": {
+          "device_id": "Pico",
+          "shades": "Shades it's paired to"
+        },
+        "data_description": {
+          "device_id": "Its On, Stop and Off buttons are found automatically. Leave it empty to go back."
+        }
+      },
+      "add_scene": {
+        "title": "Add a scene",
+        "description": "A Lutron scene that sends some of these shades to the same position, usually fully open or fully closed. Most useful for shades that often start level, such as those that close at the same height. Use only a scene that moves nothing else: activating it moves everything in it.",
+        "data": {
+          "scene": "Scene",
+          "shades": "Shades it moves",
+          "position": "Position it sets them to"
+        },
+        "data_description": {
+          "scene": "Leave it empty to go back."
+        }
+      },
+      "change_scene": {
+        "title": "Change a scene",
+        "description": "A Lutron scene that sends some of these shades to the same position, usually fully open or fully closed. Most useful for shades that often start level, such as those that close at the same height. Use only a scene that moves nothing else: activating it moves everything in it.",
+        "data": {
+          "scene": "Scene",
+          "shades": "Shades it moves",
+          "position": "Position it sets them to"
+        },
+        "data_description": {
+          "scene": "Leave it empty to go back."
+        }
+      },
+      "change_control": {
+        "title": "Change a Pico or scene",
+        "data": {
+          "control": "Pico or scene"
+        }
+      },
+      "remove_controls": {
+        "title": "Remove Picos or scenes",
+        "data": {
+          "controls": "Remove"
+        }
+      }
+    },
+    "error": {
+      "too_few_shades": "Choose at least two shades.",
+      "closed_not_below_open": "The closed height must be below the open height.",
+      "cover_unsupported": "Every shade must support setting a position and stopping.",
+      "ranges_do_not_overlap": "This shade's open-to-closed range doesn't overlap the other shades'. Every shade's range must share some height.",
+      "halfway_out_of_range": "That's outside the heights a roller shade can have at 50%; check the measurement and the open and closed heights.",
+      "halfway_cant_reach": "This 50% height can't fit every shade on one roll curve, so your shades' rolls probably don't match. Leave it empty to align them as if every shade moved in a straight line, or check the measurements.",
+      "pico_not_a_shade_pico": "That device doesn't have On, Stop and Off buttons. Choose a shade Pico with a middle button.",
+      "pico_buttons_disabled": "Enable the Pico's On, Stop and Off buttons on its device page first (Home Assistant disables them by default).",
+      "no_control_shades": "Choose at least one shade.",
+      "control_shades_not_in_group": "Choose only shades in this group.",
+      "not_a_scene": "Choose a scene.",
+      "control_already_added": "That one's already added.",
+      "scene_positions_differ": "This scene sets its shades to different positions, which this form can't show. Remove it and add it again instead."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
         "title": "Edit {name}",
         "data": {
           "name": "Name",
@@ -169,13 +317,13 @@
       "scene_positions_differ": "This scene sets its shades to different positions, which this form can't show. Remove it and add it again instead."
     },
     "abort": {
-      "reconfigure_successful": "Saved. The group has been reloaded with its new settings."
+      "saved": "Saved. The group has been reloaded with its new settings."
     }
   },
   "issues": {
     "entities_missing": {
       "title": "{name} can't find some of its devices",
-      "description": "These were renamed, removed or disabled:\n\n{entities}\n\nUntil this is fixed, {name} leaves out missing shades, and starts and stops its shades without any Pico or scene that's missing.\n\nTo fix this, open {name} under Settings → Devices & services → Aligned Shade Group, choose Reconfigure from its menu, and choose its shades, Picos and scenes again."
+      "description": "These were renamed, removed or disabled:\n\n{entities}\n\nUntil this is fixed, {name} leaves out missing shades, and starts and stops its shades without any Pico or scene that's missing.\n\nTo fix this, open {name} under Settings → Devices & services → Aligned Shade Group, choose Configure, and choose its shades, Picos and scenes again."
     }
   },
   "entity": {

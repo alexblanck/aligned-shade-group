@@ -45,10 +45,16 @@ design relies on:
 
 ## Configuration (UI only)
 
-Created and edited through one config flow: Add integration starts it at the
-`user` step, and Reconfigure (in the entry's menu) at the `reconfigure` step,
-which also renames the group. No YAML. The name is the config entry's title;
-everything else is stored in its data:
+Created through the config flow (Add integration, at its `user` step) and
+edited through an options flow (Configure, on the group's entry, at its
+`init` step), which also renames the group. Both run the same steps from one
+shared class; only the first screen and saving differ. No YAML. The name is
+the config entry's title; everything else is stored in its data, even when
+edited: every setting defines the group, so none is an option in Home
+Assistant's sense, and the options stay empty. Saving an edit updates the
+data and reloads the group. Home Assistant looks up each flow's text
+separately, so `translations/en.json` has the shared screens twice (under
+`config` and `options`), and a test checks the copies match:
 
 ```json
 {
@@ -315,7 +321,7 @@ raises nothing, so a Pico or scene is only used (for a move or a stop) while
 its entities exist, are enabled and are available; otherwise its shades are
 commanded on their own. Shades, Pico buttons or scenes that are disabled, or have neither
 a registry entry nor a state (say, renamed or removed), raise a repair issue
-asking to reconfigure the group. It's checked once Home Assistant has started,
+asking to edit the group (Configure). It's checked once Home Assistant has started,
 whenever the registry entry of one of the group's entities changes (under its
 old or new id, so renaming one back clears it), and on every move, and it's
 cleared when nothing is missing.

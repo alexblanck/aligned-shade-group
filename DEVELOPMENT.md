@@ -12,9 +12,9 @@ How to work on Aligned Shade Group. For how alignment and motion work, see
 | `custom_components/aligned_shade_group/cover.py` | The group entity: runs plans as service calls and timers, estimates positions while a plan runs |
 | `custom_components/aligned_shade_group/button.py` | The group's Realign button, which sets the group to its current position |
 | `custom_components/aligned_shade_group/pico.py` | Finding a Pico's On/Stop/Off buttons from its device |
-| `custom_components/aligned_shade_group/config_flow.py` | The setup screens: one config flow that creates a group (`user` step) or edits one (`reconfigure` step) |
+| `custom_components/aligned_shade_group/config_flow.py` | The setup screens: steps shared by the config flow that creates a group (`user` step) and the options flow that edits one (`init` step) |
 | `custom_components/aligned_shade_group/diagnostics.py` | "Download diagnostics": settings plus the group's live state |
-| `custom_components/aligned_shade_group/translations/en.json` | UI text for those screens |
+| `custom_components/aligned_shade_group/translations/en.json` | UI text for those screens, with the shared ones twice (see Code conventions) |
 | `tests/sim.py` | Simulated shades and Pico used by the scenario tests |
 | `tests/test_room.py` | End-to-end scenarios (most tests live here) |
 | `docs/INSTALLATION.md` | Installation, setup and troubleshooting for users (linked from the README) |
@@ -94,7 +94,7 @@ Most bugs are at the seams, so tests favor whole flows over individual methods.
 - [tests/test_alignment.py](tests/test_alignment.py) keeps only edge cases of
   the math that are awkward to reach end to end;
   [tests/test_config_flow.py](tests/test_config_flow.py) covers the setup and
-  Reconfigure forms: validation errors, plus whole flows run in the simulated
+  Configure forms: validation errors, plus whole flows run in the simulated
   room.
 
 When adding or changing behavior:
@@ -141,15 +141,24 @@ helpers), which would hide timing bugs.
   `config_flow.py`.
 - Home Assistant's `async_` prefix means a coroutine or a `@callback`
   function, never a plain undecorated function.
+- The setup and Configure screens are the same steps, but Home Assistant
+  looks up an options flow's text under `options` and a config flow's under
+  `config`, with no fallback, and a custom integration's `en.json` can't use
+  `[%key:…%]` references (core fills those in at build time). So
+  `translations/en.json` has every shared step and error twice: change both
+  copies together. Only `config.step.user` and `options.step.init` (the first
+  screens) and `options.abort` differ; `test_editing_screens_match_setup_screens`
+  fails if the rest drift apart.
 - Debug logs should name the group (`self.entity_id`) so multiple groups can be
   told apart.
 
 Adding a setting touches several files: a key in `const.py`, the schema and
 validation in `config_flow.py` (creating and editing share the same steps),
-its label in `translations/en.json`, and reading it in `cover.py`. Settings
-are stored in the config entry's `data`. There's no options flow: Home
-Assistant's options are for optional tweaks, while every setting here defines
-the group, so editing is a reconfigure flow.
+its label in `translations/en.json` (under both `config` and `options`, which
+must match), and reading it in `cover.py`. Settings are stored in the config
+entry's `data`, also when edited: editing (Configure) is an options flow so
+it's on the entry's settings button, but every setting defines the group, so
+its options stay empty.
 
 **Saved groups must keep working.** Breaking backwards compatibility with
 saved settings is no longer acceptable: a change must never break existing
