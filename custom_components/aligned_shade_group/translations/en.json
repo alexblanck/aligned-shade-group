@@ -52,7 +52,7 @@
       },
       "controls": {
         "title": "Picos and scenes",
-        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}\n\n---",
         "menu_options": {
           "add_pico": "Add a Pico",
           "add_scene": "Add a scene",
@@ -63,7 +63,7 @@
       },
       "controls_configured": {
         "title": "Picos and scenes",
-        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Configured{controls}",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Configured{controls}\n\n---",
         "menu_options": {
           "add_pico": "Add a Pico",
           "add_scene": "Add a scene",
@@ -74,7 +74,7 @@
       },
       "controls_configured_suggested": {
         "title": "Picos and scenes",
-        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}\n\n### Configured{controls}",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}\n\n### Configured{controls}\n\n---",
         "menu_options": {
           "add_pico": "Add a Pico",
           "add_scene": "Add a scene",
@@ -211,7 +211,7 @@
       },
       "controls": {
         "title": "Picos and scenes",
-        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}\n\n---",
         "menu_options": {
           "add_pico": "Add a Pico",
           "add_scene": "Add a scene",
@@ -222,7 +222,7 @@
       },
       "controls_configured": {
         "title": "Picos and scenes",
-        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Configured{controls}",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Configured{controls}\n\n---",
         "menu_options": {
           "add_pico": "Add a Pico",
           "add_scene": "Add a scene",
@@ -233,7 +233,7 @@
       },
       "controls_configured_suggested": {
         "title": "Picos and scenes",
-        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}\n\n### Configured{controls}",
+        "description": "Without these, the group commands each shade separately, so shades that start level still start a fraction of a second apart. A Pico or Lutron scene starts all its shades with one command, at exactly the same moment, and the group uses one whenever it can.\n\nA Pico can also stop its shades together; a scene can only start them.\n\n### Suggested\nNothing starts these yet (↑ opening, ↓ closing):{suggestions}\n\n### Configured{controls}\n\n---",
         "menu_options": {
           "add_pico": "Add a Pico",
           "add_scene": "Add a scene",
