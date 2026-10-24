@@ -50,9 +50,12 @@ each its exact position once they're moving.
 
 ## Install and configure
 
-1. HACS → ⋮ → Custom repositories → add
-   `https://github.com/alexblanck/aligned-shade-group` as an **Integration**.
-2. Install **Aligned Shade Group** and restart Home Assistant.
+1. Open Aligned Shade Group in HACS:
+
+   [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alexblanck&repository=aligned-shade-group&category=integration)
+
+   Or open HACS yourself and search for **Aligned Shade Group**.
+2. Download it and restart Home Assistant.
 3. Settings → Devices & services → Add integration → **Aligned Shade Group**.
 
 Setup asks for each shade's hemline height when fully open and fully closed

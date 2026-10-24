@@ -26,9 +26,15 @@ Other shades that work the same way should work too, but haven't been tested.
 
 ## Installation (HACS)
 
-1. HACS → ⋮ → Custom repositories → add
-   `https://github.com/alexblanck/aligned-shade-group` as an **Integration**.
-2. Install **Aligned Shade Group** and restart Home Assistant.
+Aligned Shade Group is in HACS's default list, so there's no repository to
+add.
+
+1. Open Aligned Shade Group in HACS:
+
+   [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alexblanck&repository=aligned-shade-group&category=integration)
+
+   Or open HACS yourself and search for **Aligned Shade Group**.
+2. Download it and restart Home Assistant.
 3. Settings → Devices & services → Add integration →
    **Aligned Shade Group**. Each group gets its own device, which you can
    assign to an area.
