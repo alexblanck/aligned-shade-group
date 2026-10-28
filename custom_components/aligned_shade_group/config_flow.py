@@ -29,6 +29,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .alignment import ShadeConfig, matched_roll_group
+from .availability import missing_entities, unavailable_entities
 from .const import (
     CONF_CLOSED_HEIGHT,
     CONF_CONTROLS,
@@ -204,6 +205,13 @@ def _starts(control: dict[str, Any], entity_ids: list[str], opening: bool) -> bo
         return True  # a Pico's On or Off button
     end_pct = 100 if opening else 0
     return all(pct == end_pct for pct in control[CONF_SCENE_POSITIONS].values())
+
+
+def _control_entities(control: dict[str, Any]) -> list[str]:
+    """The entities a stored Pico or scene needs: its buttons, or its scene."""
+    if control[CONF_TYPE] == ControlType.SCENE:
+        return [control[CONF_ENTITY_ID]]
+    return [control[CONF_PICO_OPEN], control[CONF_PICO_STOP], control[CONF_PICO_CLOSE]]
 
 
 def _control_shades(control: dict[str, Any]) -> list[str]:
@@ -673,34 +681,51 @@ class _GroupFlow(ConfigEntryBaseFlow):
 
     def _describe_control(self, control: dict[str, Any]) -> str:
         """A Pico or scene, for the menu, as Markdown: its name in bold (with a
-        scene's position), then its shades as a list.
+        scene's position and any problem), then its shades as a list.
         """
-        name, position, shades = self._control_parts(control)
-        return f"**{name}**{position}" + "".join(f"\n- {shade}" for shade in shades)
+        name, details, shades = self._control_parts(control)
+        return f"**{name}**{details}" + "".join(f"\n- {shade}" for shade in shades)
 
     def _control_label(self, control: dict[str, Any]) -> str:
-        """A Pico or scene's name (with a scene's position), for picking it."""
-        name, position, _ = self._control_parts(control)
-        return f"{name}{position}"
+        """A Pico or scene's name (with a scene's position and any problem),
+        for picking it.
+        """
+        name, details, _ = self._control_parts(control)
+        return f"{name}{details}"
 
     def _control_parts(self, control: dict[str, Any]) -> tuple[str, str, list[str]]:
-        """A Pico or scene's name, a scene's position (" → 100%", or ""), and
-        its shades.
+        """A Pico or scene's name; what follows it: a scene's position
+        (" → 100%") and any problem (" ⚠️ missing"), or ""; and its shades.
         """
+        problem = self._control_problem(control)
         if control[CONF_TYPE] != ControlType.SCENE:
             name = self._pico_name(control[CONF_PICO_OPEN])
-            return name, "", [self._friendly_name(s) for s in control[CONF_SHADES]]
+            shades = [self._friendly_name(s) for s in control[CONF_SHADES]]
+            return name, problem, shades
         name = self._friendly_name(control[CONF_ENTITY_ID])
         positions = control[CONF_SCENE_POSITIONS]
         if len(set(positions.values())) == 1:
             # One position for all, as the form sets: say it once.
             position = f" → {next(iter(positions.values()))}%"
-            return name, position, [self._friendly_name(s) for s in positions]
+            shades = [self._friendly_name(s) for s in positions]
+            return name, position + problem, shades
         return (
             name,
-            "",
+            problem,
             [f"{self._friendly_name(s)} → {p}%" for s, p in positions.items()],
         )
+
+    def _control_problem(self, control: dict[str, Any]) -> str:
+        """ " ⚠️ missing" if the group can't find some of a Pico or scene's
+        entities (as its repair lists), " ⚠️ unavailable" if they're offline,
+        else "". Either way the group starts its shades without it.
+        """
+        entities = _control_entities(control)
+        if missing_entities(self.hass, entities):
+            return " ⚠️ missing"
+        if unavailable_entities(self.hass, entities):
+            return " ⚠️ unavailable"
+        return ""
 
     def _pico_device_id(self, button: str) -> str | None:
         """The device a Pico button belongs to."""

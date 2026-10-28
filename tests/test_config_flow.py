@@ -95,7 +95,9 @@ async def choose(
 def add_pico(
     hass: HomeAssistant, buttons: list[str], disabled: tuple[str, ...] = ()
 ) -> str:
-    """Register a Caseta Pico device with these buttons; returns its device id."""
+    """Register a Caseta Pico device with these buttons, each with a state
+    unless disabled; returns its device id.
+    """
     entry = MockConfigEntry(domain="lutron_caseta")
     entry.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -104,7 +106,7 @@ def add_pico(
         name="Living Room Pico",
     )
     for name in buttons:
-        er.async_get(hass).async_get_or_create(
+        button = er.async_get(hass).async_get_or_create(
             "button",
             "lutron_caseta",
             f"pico_{name}",
@@ -115,7 +117,17 @@ def add_pico(
                 er.RegistryEntryDisabler.INTEGRATION if name in disabled else None
             ),
         )
+        if not button.disabled:
+            hass.states.async_set(button.entity_id, "unknown")
     return device.id
+
+
+def add_scene(hass: HomeAssistant) -> None:
+    """Register a Lutron scene, scene.open_both, with a state."""
+    er.async_get(hass).async_get_or_create(
+        "scene", "lutron_caseta", "open_both", suggested_object_id="open_both"
+    )
+    hass.states.async_set("scene.open_both", "unknown")
 
 
 async def test_too_few_shades(hass: HomeAssistant) -> None:
@@ -153,6 +165,7 @@ async def test_picos_and_scenes_are_stored_with_their_shades(
     result = await reach_controls(hass)
     # A Pico paired to the low-sill shade only, and a scene opening both.
     pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
+    add_scene(hass)
     result = await add_pico_answers(hass, result, pico, [LOW_SILL])
     assert result["step_id"] in CONTROLS_MENUS
     assert "Living Room Pico" in result["description_placeholders"]["controls"]
@@ -206,6 +219,7 @@ async def test_picos_and_scenes_can_be_changed_or_removed_one_at_a_time(
 ) -> None:
     result = await reach_controls(hass)
     pico = add_pico(hass, ["On", "Stop", "Off", "Raise", "Lower"])
+    add_scene(hass)
     result = await add_pico_answers(hass, result, pico, [LOW_SILL])
     result = await choose(hass, result, "add_scene")
     result = await configure(
@@ -588,6 +602,48 @@ async def test_editing_fixes_renamed_pico_buttons(
     (pico,) = room.entry.data["controls"]
     assert pico["stop"] == "button.pico_stop_renamed"
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_missing_and_unavailable_controls_are_marked(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    room = await build_room(
+        hass,
+        freezer,
+        same_tops(),
+        scenes={"open_both": {HIGH_SILL: 100, LOW_SILL: 100}},
+    )
+    # The Pico's Stop button renamed (as raises a repair), the scene's
+    # entity unavailable.
+    er.async_get(hass).async_update_entity(
+        "button.pico_stop", new_entity_id="button.pico_stop_renamed"
+    )
+    scene = hass.states.get("scene.open_both")
+    assert scene is not None
+    hass.states.async_set(scene.entity_id, "unavailable", scene.attributes)
+    await hass.async_block_till_done()
+
+    flow = await room.start_editing()
+    flow = await configure(hass, flow, prefilled_answers(flow))
+    flow = await room.answer_shade_steps(flow)
+
+    headings = [
+        block.split("\n")[0]
+        for block in flow["description_placeholders"]["controls"].split("\n\n")[1:]
+    ]
+    assert headings == [
+        "**Living Room Pico** ⚠️ missing",
+        "**open_both** → 100% ⚠️ unavailable",
+    ]
+    for step in ("change_control", "remove_controls"):
+        form = await room.choose(flow, step)
+        (field,) = form["data_schema"].schema
+        options = form["data_schema"].schema[field].config["options"]
+        assert [option["label"] for option in options] == [
+            "Living Room Pico ⚠️ missing",
+            "open_both → 100% ⚠️ unavailable",
+        ]
+        flow = await configure(hass, form, {})  # nothing chosen: back
 
 
 async def test_editing_mid_run(

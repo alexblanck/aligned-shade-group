@@ -33,7 +33,6 @@ from homeassistant.const import (
     SERVICE_SET_COVER_POSITION,
     SERVICE_STOP_COVER,
     SERVICE_TURN_ON,
-    STATE_UNAVAILABLE,
     Platform,
 )
 from homeassistant.core import (
@@ -65,6 +64,7 @@ from .alignment import (
     Starter,
     matched_roll_group,
 )
+from .availability import missing_entities, unavailable_entities
 from .const import (
     CONF_CONTROLS,
     CONF_PICO_CLOSE,
@@ -481,28 +481,15 @@ class AlignedShadeGroup(CoverEntity):
             },
         }
 
-    def _missing(self, entity_ids: Iterable[str]) -> list[str]:
-        """Entities that are disabled, or have neither a registry entry nor a
-        state (say, renamed or removed).
-        """
-        registry = er.async_get(self.hass)
-        missing = []
-        for entity_id in entity_ids:
-            entry = registry.async_get(entity_id)
-            if entry is None:
-                if self.hass.states.get(entity_id) is None:
-                    missing.append(entity_id)
-            elif entry.disabled:
-                missing.append(entity_id)
-        return missing
-
     @callback
     def _async_update_missing_issue(self) -> list[str]:
         """Raise or clear the repair issue for missing shades and controls.
 
         Fixing them means editing the group (Configure). Returns them.
         """
-        missing = self._missing([*self._entity_ids, *self._control_entities()])
+        missing = missing_entities(
+            self.hass, [*self._entity_ids, *self._control_entities()]
+        )
         issue_id = missing_entities_issue_id(self._entry.entry_id)
         if not missing:
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
@@ -535,7 +522,7 @@ class AlignedShadeGroup(CoverEntity):
         """
         usable = []
         for control in self._controls:
-            if missing := self._missing(control.entities()):
+            if missing := missing_entities(self.hass, control.entities()):
                 _LOGGER.warning(
                     "%s: not using %s, which is missing or disabled; "
                     "edit the group (Configure) to choose it again",
@@ -543,13 +530,7 @@ class AlignedShadeGroup(CoverEntity):
                     ", ".join(missing),
                 )
                 continue
-            unavailable = [
-                entity_id
-                for entity_id in control.entities()
-                if (state := self.hass.states.get(entity_id)) is None
-                or state.state == STATE_UNAVAILABLE
-            ]
-            if unavailable:
+            if unavailable := unavailable_entities(self.hass, control.entities()):
                 _LOGGER.warning(
                     "%s: not using %s, which is unavailable",
                     self.entity_id,
