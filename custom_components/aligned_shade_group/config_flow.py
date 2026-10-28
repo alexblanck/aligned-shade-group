@@ -573,7 +573,6 @@ class _GroupFlow(ConfigEntryBaseFlow):
             data_schema=vol.Schema(
                 {vol.Optional(FIELD_CONTROL): self._controls_selector(multiple=False)}
             ),
-            description_placeholders={"controls": self._describe_controls()},
             errors=errors,
         )
 
@@ -595,12 +594,11 @@ class _GroupFlow(ConfigEntryBaseFlow):
             data_schema=vol.Schema(
                 {vol.Optional(FIELD_CONTROLS): self._controls_selector(multiple=True)}
             ),
-            description_placeholders={"controls": self._describe_controls()},
         )
 
     def _controls_selector(self, multiple: bool) -> selector.SelectSelector:
-        """Picks saved Picos and scenes, by index, labeled by name (their
-        shades are listed above, as on the menu).
+        """Picks saved Picos and scenes, by index, labeled by name (the menu
+        lists their shades).
         """
         return selector.SelectSelector(
             selector.SelectSelectorConfig(

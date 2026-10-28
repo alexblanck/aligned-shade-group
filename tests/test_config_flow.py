@@ -250,14 +250,8 @@ async def test_picos_and_scenes_can_be_changed_or_removed_one_at_a_time(
     assert prefilled_answers(result) == {"device_id": pico, "shades": [LOW_SILL]}
     result = await configure(hass, result, prefilled_answers(result))
 
-    # Remove just the Pico. The screen lists each with its shades, as the
-    # menu does, so the checkboxes only need their names.
-    menu = result
+    # Remove just the Pico, picked by name (the menu lists its shades).
     result = await choose(hass, result, "remove_controls")
-    assert (
-        result["description_placeholders"]["controls"]
-        == menu["description_placeholders"]["controls"]
-    )
     options = result["data_schema"].schema["controls"].config["options"]
     assert [option["label"] for option in options] == [
         "Living Room Pico",
