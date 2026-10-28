@@ -684,9 +684,16 @@ async def test_group_has_its_own_device(
 async def test_editing_changes_only_what_was_edited(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    # Three shades with a curve and a Pico, then editing it changing only the
-    # name and accepting every other prefilled answer as it is.
-    room = await build_room(hass, freezer, matched_rolls(), pico=True, start_pct=50)
+    # Three shades with a curve, a Pico and a scene, then editing it changing
+    # only the name and accepting every other prefilled answer as it is.
+    room = await build_room(
+        hass,
+        freezer,
+        matched_rolls(),
+        pico=True,
+        start_pct=50,
+        scenes={"half_open": {"cover.tall": 50, "cover.low": 50}},
+    )
     # Deep-copied in case a change ever edits the stored data in place.
     saved = copy.deepcopy(dict(room.entry.data))
 
@@ -694,13 +701,13 @@ async def test_editing_changes_only_what_was_edited(
     flow = await configure(hass, flow, {**prefilled_answers(flow), "name": "Den"})
     while flow["type"] == "form":
         flow = await configure(hass, flow, prefilled_answers(flow))
-    flow = await room.choose(flow, "save")  # keeping the saved Pico
+    flow = await room.choose(flow, "save")  # keeping the saved Pico and scene
     await hass.async_block_till_done()
 
     assert flow["reason"] == "saved", flow
     assert room.entry.title == "Den"
     assert room.entry.data == saved
-    assert room.entry.data["controls"], "the Pico was kept"
+    assert len(room.entry.data["controls"]) == 2, "the Pico and scene were kept"
     assert room.entry.options == {}  # settings stay in the data
 
 

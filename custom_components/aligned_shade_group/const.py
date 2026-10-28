@@ -26,6 +26,10 @@ CONF_PICO_OPEN = "open"
 CONF_PICO_STOP = "stop"
 CONF_PICO_CLOSE = "close"
 CONF_SCENE_POSITIONS = "positions"
+# Home Assistant's own CONF_TYPE and CONF_ENTITY_ID, repeated for modules
+# without Home Assistant imports.
+CONF_TYPE = "type"
+CONF_ENTITY_ID = "entity_id"
 
 
 class ControlType(StrEnum):

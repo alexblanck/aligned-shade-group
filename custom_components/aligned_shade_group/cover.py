@@ -28,8 +28,6 @@ from homeassistant.components.cover import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
-    CONF_ENTITY_ID,
-    CONF_TYPE,
     SERVICE_SET_COVER_POSITION,
     SERVICE_STOP_COVER,
     SERVICE_TURN_ON,
@@ -67,16 +65,12 @@ from .alignment import (
 from .availability import missing_entities, unavailable_entities
 from .const import (
     CONF_CONTROLS,
-    CONF_PICO_CLOSE,
-    CONF_PICO_OPEN,
-    CONF_PICO_STOP,
-    CONF_SCENE_POSITIONS,
     CONF_SHADES,
     DOMAIN,
     ControlType,
     missing_entities_issue_id,
 )
-from .pico import PicoButtons
+from .controls import Control, Pico, controls_from_stored
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,41 +118,6 @@ class _RunningMove:
         return round(max(move.target_pct, move.from_pct - moved_pct))
 
 
-@dataclass(frozen=True)
-class _Pico:
-    """A Pico paired to some (or all) of the group's shades."""
-
-    buttons: PicoButtons
-    shades: tuple[str, ...]
-
-    def entities(self) -> tuple[str, ...]:
-        """Entities it needs, to check they're there."""
-        return self.buttons.buttons()
-
-    def starters(self) -> list[Starter]:
-        """Its On button sends its shades to 100%, its Off button to 0%."""
-        return [
-            Starter(name=self.buttons.open, targets=dict.fromkeys(self.shades, 100)),
-            Starter(name=self.buttons.close, targets=dict.fromkeys(self.shades, 0)),
-        ]
-
-
-@dataclass(frozen=True)
-class _Scene:
-    """A Lutron scene that sets some of the group's shades to positions."""
-
-    entity_id: str
-    positions: Mapping[str, int]
-
-    def entities(self) -> tuple[str, ...]:
-        """Entities it needs, to check they're there."""
-        return (self.entity_id,)
-
-    def starters(self) -> list[Starter]:
-        """Activating it sends each of its shades to its position."""
-        return [Starter(name=self.entity_id, targets=self.positions)]
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -167,22 +126,7 @@ async def async_setup_entry(
     """Set up the aligned shade group entity."""
     data = entry.data
     group = matched_roll_group(ShadeConfig(**shade) for shade in data[CONF_SHADES])
-    controls: list[_Pico | _Scene] = []
-    for control in data[CONF_CONTROLS]:
-        if control[CONF_TYPE] == ControlType.PICO:
-            buttons = PicoButtons(
-                open=control[CONF_PICO_OPEN],
-                stop=control[CONF_PICO_STOP],
-                close=control[CONF_PICO_CLOSE],
-            )
-            controls.append(_Pico(buttons=buttons, shades=tuple(control[CONF_SHADES])))
-        elif control[CONF_TYPE] == ControlType.SCENE:
-            controls.append(
-                _Scene(
-                    entity_id=control[CONF_ENTITY_ID],
-                    positions=control[CONF_SCENE_POSITIONS],
-                )
-            )
+    controls = controls_from_stored(data[CONF_CONTROLS])
     entity = AlignedShadeGroup(entry=entry, group=group, controls=controls)
     entry.runtime_data = entity  # for diagnostics
     async_add_entities([entity])
@@ -210,7 +154,7 @@ class AlignedShadeGroup(CoverEntity):
         self,
         entry: ConfigEntry,
         group: AlignmentGroup,
-        controls: list[_Pico | _Scene],
+        controls: list[Control],
     ) -> None:
         """Initialize the group."""
         self._attr_unique_id = entry.entry_id
@@ -383,7 +327,7 @@ class AlignedShadeGroup(CoverEntity):
             "controls": [
                 {"type": ControlType.PICO, "shades": list(control.shades)}
                 | asdict(control.buttons)
-                if isinstance(control, _Pico)
+                if isinstance(control, Pico)
                 else {
                     "type": ControlType.SCENE,
                     "entity_id": control.entity_id,
@@ -513,7 +457,7 @@ class AlignedShadeGroup(CoverEntity):
         return [entity for control in self._controls for entity in control.entities()]
 
     @callback
-    def _async_usable_controls(self) -> list[_Pico | _Scene]:
+    def _async_usable_controls(self) -> list[Control]:
         """Controls whose entities can be used right now.
 
         Pressing a button that doesn't exist does nothing and raises nothing,
@@ -571,7 +515,7 @@ class AlignedShadeGroup(CoverEntity):
         picos = [
             control
             for control in self._async_usable_controls()
-            if isinstance(control, _Pico) and travelling & set(control.shades)
+            if isinstance(control, Pico) and travelling & set(control.shades)
         ]
         # Each button once: a second press would find the shades still and
         # send them to favorite.
@@ -759,7 +703,7 @@ class AlignedShadeGroup(CoverEntity):
         stop_first = {
             starter.name: control.buttons.stop
             for control in self._async_usable_controls()
-            if isinstance(control, _Pico) and travelling.keys() & set(control.shades)
+            if isinstance(control, Pico) and travelling.keys() & set(control.shades)
             for starter in control.starters()
         }
         self._moving = True

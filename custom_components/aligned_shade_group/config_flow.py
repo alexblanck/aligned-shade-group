@@ -18,7 +18,6 @@ from homeassistant.const import (
     ATTR_FRIENDLY_NAME,
     ATTR_SUPPORTED_FEATURES,
     CONF_ENTITY_ID,
-    CONF_TYPE,
     STATE_UNAVAILABLE,
     Platform,
 )
@@ -35,15 +34,11 @@ from .const import (
     CONF_CONTROLS,
     CONF_HALFWAY_HEIGHT,
     CONF_OPEN_HEIGHT,
-    CONF_PICO_CLOSE,
-    CONF_PICO_OPEN,
-    CONF_PICO_STOP,
-    CONF_SCENE_POSITIONS,
     CONF_SHADES,
     CONF_TRAVEL_TIME_S,
     DOMAIN,
-    ControlType,
 )
+from .controls import Control, Pico, Scene, controls_from_stored
 from .pico import PicoButtonsError, find_pico_buttons
 from .roll_profile import halfway_height_range
 
@@ -171,7 +166,7 @@ def _add_scene_schema(entity_ids: list[str]) -> vol.Schema:
 
 
 def _suggested_starts(
-    shades: list[dict[str, Any]], controls: list[dict[str, Any]]
+    shades: list[dict[str, Any]], controls: list[Control]
 ) -> list[tuple[bool, list[str]]]:
     """Shades that often start level together, with the way they'd go (True
     for opening), that no Pico or scene covers yet.
@@ -197,28 +192,14 @@ def _suggested_starts(
     ]
 
 
-def _starts(control: dict[str, Any], entity_ids: list[str], opening: bool) -> bool:
+def _starts(control: Control, entity_ids: list[str], opening: bool) -> bool:
     """Whether a Pico or scene starts exactly these shades, fully that way."""
-    if set(_control_shades(control)) != set(entity_ids):
+    if set(control.shade_ids()) != set(entity_ids):
         return False
-    if control[CONF_TYPE] != ControlType.SCENE:
-        return True  # a Pico's On or Off button
+    if isinstance(control, Pico):
+        return True  # its On or Off button
     end_pct = 100 if opening else 0
-    return all(pct == end_pct for pct in control[CONF_SCENE_POSITIONS].values())
-
-
-def _control_entities(control: dict[str, Any]) -> list[str]:
-    """The entities a stored Pico or scene needs: its buttons, or its scene."""
-    if control[CONF_TYPE] == ControlType.SCENE:
-        return [control[CONF_ENTITY_ID]]
-    return [control[CONF_PICO_OPEN], control[CONF_PICO_STOP], control[CONF_PICO_CLOSE]]
-
-
-def _control_shades(control: dict[str, Any]) -> list[str]:
-    """The shades a stored Pico or scene moves."""
-    if control[CONF_TYPE] == ControlType.SCENE:
-        return list(control[CONF_SCENE_POSITIONS])
-    return list(control[CONF_SHADES])
+    return all(pct == end_pct for pct in control.positions.values())
 
 
 # Checked here too: the picker's filter only hides covers in the form, and it
@@ -285,9 +266,9 @@ class _GroupFlow(ConfigEntryBaseFlow):
         """Initialize the flow."""
         self._name = ""
         self._entity_ids: list[str] = []
-        # Picos and scenes, as stored; when editing, starting with the saved ones.
-        self._controls: list[dict[str, Any]] = []
-        self._old_controls: list[dict[str, Any]] = []
+        # Picos and scenes; when editing, starting with the saved ones.
+        self._controls: list[Control] = []
+        self._old_controls: list[Control] = []
         # The index of the Pico or scene being changed, if any.
         self._changing: int | None = None
         # Every shade's settings, once measured, ready to save.
@@ -331,7 +312,7 @@ class _GroupFlow(ConfigEntryBaseFlow):
         self._controls = [
             control
             for control in self._old_controls
-            if set(_control_shades(control)) <= set(self._entity_ids)
+            if set(control.shade_ids()) <= set(self._entity_ids)
         ]
         return None
 
@@ -481,7 +462,7 @@ class _GroupFlow(ConfigEntryBaseFlow):
                 errors["base"] = err.reason
             else:
                 if any(
-                    control.get(CONF_PICO_STOP) == buttons.stop
+                    isinstance(control, Pico) and control.buttons.stop == buttons.stop
                     for control in self._other_controls()
                 ):
                     errors["base"] = "control_already_added"
@@ -489,20 +470,17 @@ class _GroupFlow(ConfigEntryBaseFlow):
                     errors["base"] = error
                 else:
                     return await self._async_keep_control(
-                        {
-                            CONF_TYPE: ControlType.PICO,
-                            CONF_SHADES: shades,
-                            CONF_PICO_OPEN: buttons.open,
-                            CONF_PICO_STOP: buttons.stop,
-                            CONF_PICO_CLOSE: buttons.close,
-                        }
+                        Pico(buttons=buttons, shades=tuple(shades))
                     )
 
         prefill: dict[str, Any] = {FIELD_SHADES: self._entity_ids}
         if self._changing is not None:
-            control = self._controls[self._changing]
-            prefill = {FIELD_SHADES: control[CONF_SHADES]}
-            if device_id := self._pico_device_id(control[CONF_PICO_OPEN]):
+            pico = self._controls[self._changing]
+            assert isinstance(
+                pico, Pico
+            )  # change_control opens this form only for a Pico
+            prefill = {FIELD_SHADES: list(pico.shades)}
+            if device_id := self._pico_device_id(pico.buttons.open):
                 prefill[FIELD_PICO_DEVICE] = device_id
         return self.async_show_form(
             # The same form, titled for changing (a separate step, so the title
@@ -530,7 +508,8 @@ class _GroupFlow(ConfigEntryBaseFlow):
             if split_entity_id(user_input[FIELD_SCENE])[0] != Platform.SCENE:
                 errors["base"] = "not_a_scene"
             elif any(
-                control.get(CONF_ENTITY_ID) == user_input[FIELD_SCENE]
+                isinstance(control, Scene)
+                and control.entity_id == user_input[FIELD_SCENE]
                 for control in self._other_controls()
             ):
                 errors["base"] = "control_already_added"
@@ -539,11 +518,10 @@ class _GroupFlow(ConfigEntryBaseFlow):
             else:
                 position_pct = round(user_input[FIELD_SCENE_POSITION])
                 return await self._async_keep_control(
-                    {
-                        CONF_TYPE: ControlType.SCENE,
-                        CONF_ENTITY_ID: user_input[FIELD_SCENE],
-                        CONF_SCENE_POSITIONS: dict.fromkeys(shades, position_pct),
-                    }
+                    Scene(
+                        entity_id=user_input[FIELD_SCENE],
+                        positions=dict.fromkeys(shades, position_pct),
+                    )
                 )
 
         prefill: dict[str, Any] = {
@@ -551,12 +529,14 @@ class _GroupFlow(ConfigEntryBaseFlow):
             FIELD_SCENE_POSITION: 100,
         }
         if self._changing is not None:
-            control = self._controls[self._changing]
-            positions = control[CONF_SCENE_POSITIONS]
+            scene = self._controls[self._changing]
+            assert isinstance(
+                scene, Scene
+            )  # change_control opens this form only for a scene
             prefill = {
-                FIELD_SCENE: control[CONF_ENTITY_ID],
-                FIELD_SHADES: list(positions),
-                FIELD_SCENE_POSITION: next(iter(positions.values())),
+                FIELD_SCENE: scene.entity_id,
+                FIELD_SHADES: list(scene.shade_ids()),
+                FIELD_SCENE_POSITION: next(iter(scene.positions.values())),
             }
         return self.async_show_form(
             step_id="add_scene" if self._changing is None else "change_scene",
@@ -578,10 +558,10 @@ class _GroupFlow(ConfigEntryBaseFlow):
                 return await self.async_step_controls()  # nothing chosen
             index = int(user_input[FIELD_CONTROL])
             control = self._controls[index]
-            if control[CONF_TYPE] != ControlType.SCENE:
+            if isinstance(control, Pico):
                 self._changing = index
                 return await self.async_step_change_pico()
-            if len(set(control[CONF_SCENE_POSITIONS].values())) > 1:
+            if len(set(control.positions.values())) > 1:
                 # The form sets one position for all its shades, so it would
                 # flatten them.
                 errors["base"] = "scene_positions_differ"
@@ -635,7 +615,7 @@ class _GroupFlow(ConfigEntryBaseFlow):
             )
         )
 
-    def _other_controls(self) -> list[dict[str, Any]]:
+    def _other_controls(self) -> list[Control]:
         """The Picos and scenes besides the one being changed."""
         return [
             control
@@ -643,7 +623,7 @@ class _GroupFlow(ConfigEntryBaseFlow):
             if index != self._changing
         ]
 
-    async def _async_keep_control(self, control: dict[str, Any]) -> ConfigFlowResult:
+    async def _async_keep_control(self, control: Control) -> ConfigFlowResult:
         """Add a Pico or scene, or replace the one being changed."""
         if self._changing is None:
             self._controls.append(control)
@@ -656,7 +636,10 @@ class _GroupFlow(ConfigEntryBaseFlow):
     ) -> ConfigFlowResult:
         """Create the group, or update the one being edited."""
         return self._save(
-            {CONF_SHADES: self._shades_to_save, CONF_CONTROLS: self._controls}
+            {
+                CONF_SHADES: self._shades_to_save,
+                CONF_CONTROLS: [control.to_stored() for control in self._controls],
+            }
         )
 
     def _save(self, data: dict[str, Any]) -> ConfigFlowResult:
@@ -679,31 +662,31 @@ class _GroupFlow(ConfigEntryBaseFlow):
             f"\n\n{self._describe_control(control)}" for control in self._controls
         )
 
-    def _describe_control(self, control: dict[str, Any]) -> str:
+    def _describe_control(self, control: Control) -> str:
         """A Pico or scene, for the menu, as Markdown: its name in bold (with a
         scene's position and any problem), then its shades as a list.
         """
         name, details, shades = self._control_parts(control)
         return f"**{name}**{details}" + "".join(f"\n- {shade}" for shade in shades)
 
-    def _control_label(self, control: dict[str, Any]) -> str:
+    def _control_label(self, control: Control) -> str:
         """A Pico or scene's name (with a scene's position and any problem),
         for picking it.
         """
         name, details, _ = self._control_parts(control)
         return f"{name}{details}"
 
-    def _control_parts(self, control: dict[str, Any]) -> tuple[str, str, list[str]]:
+    def _control_parts(self, control: Control) -> tuple[str, str, list[str]]:
         """A Pico or scene's name; what follows it: a scene's position
         (" → 100%") and any problem (" ⚠️ missing"), or ""; and its shades.
         """
         problem = self._control_problem(control)
-        if control[CONF_TYPE] != ControlType.SCENE:
-            name = self._pico_name(control[CONF_PICO_OPEN])
-            shades = [self._friendly_name(s) for s in control[CONF_SHADES]]
+        if isinstance(control, Pico):
+            name = self._pico_name(control.buttons.open)
+            shades = [self._friendly_name(s) for s in control.shades]
             return name, problem, shades
-        name = self._friendly_name(control[CONF_ENTITY_ID])
-        positions = control[CONF_SCENE_POSITIONS]
+        name = self._friendly_name(control.entity_id)
+        positions = control.positions
         if len(set(positions.values())) == 1:
             # One position for all, as the form sets: say it once.
             position = f" → {next(iter(positions.values()))}%"
@@ -715,12 +698,12 @@ class _GroupFlow(ConfigEntryBaseFlow):
             [f"{self._friendly_name(s)} → {p}%" for s, p in positions.items()],
         )
 
-    def _control_problem(self, control: dict[str, Any]) -> str:
+    def _control_problem(self, control: Control) -> str:
         """ " ⚠️ missing" if the group can't find some of a Pico or scene's
         entities (as its repair lists), " ⚠️ unavailable" if they're offline,
         else "". Either way the group starts its shades without it.
         """
-        entities = _control_entities(control)
+        entities = control.entities()
         if missing_entities(self.hass, entities):
             return " ⚠️ missing"
         if unavailable_entities(self.hass, entities):
@@ -785,7 +768,7 @@ class AlignedShadeGroupOptionsFlow(_GroupFlow, OptionsFlow):
         self._old_shades = {
             shade[CONF_ENTITY_ID]: shade for shade in entry.data[CONF_SHADES]
         }
-        self._old_controls = list(entry.data[CONF_CONTROLS])
+        self._old_controls = controls_from_stored(entry.data[CONF_CONTROLS])
         prefill = {FIELD_NAME: entry.title, FIELD_SHADES: list(self._old_shades)}
         return await self._async_step_choose_shades("init", user_input, prefill)
 

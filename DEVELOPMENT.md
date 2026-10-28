@@ -9,6 +9,7 @@ How to work on Aligned Shade Group. For how alignment and motion work, see
 |---|---|
 | `custom_components/aligned_shade_group/roll_profile.py` | Pure math: how a roller's hemline height follows its position (`RollProfile`), and a shade's view of one. No Home Assistant imports |
 | `custom_components/aligned_shade_group/alignment.py` | Pure math: building a group from its settings, alignment, motion plans. No Home Assistant imports |
+| `custom_components/aligned_shade_group/controls.py` | The Picos and scenes a group starts shades with: read from and written to its settings, used by both the setup screens and the group. No Home Assistant imports |
 | `custom_components/aligned_shade_group/cover.py` | The group entity: runs plans as service calls and timers, estimates positions while a plan runs |
 | `custom_components/aligned_shade_group/button.py` | The group's Realign button, which sets the group to its current position |
 | `custom_components/aligned_shade_group/availability.py` | Which shades, Picos and scenes are missing (renamed, removed or disabled, raising a repair) or unavailable, for the group and its setup screens |
@@ -96,7 +97,8 @@ Most bugs are at the seams, so tests favor whole flows over individual methods.
   the math that are awkward to reach end to end;
   [tests/test_config_flow.py](tests/test_config_flow.py) covers the setup and
   Configure forms: validation errors, plus whole flows run in the simulated
-  room.
+  room. [tests/test_controls.py](tests/test_controls.py) pins how saved Picos
+  and scenes are stored, so a change that would break saved groups fails.
 
 When adding or changing behavior:
 
@@ -122,7 +124,7 @@ helpers), which would hide timing bugs.
 
 ## Code conventions
 
-- Keep `roll_profile.py` and `alignment.py` free of Home Assistant imports; the entity in `cover.py`
+- Keep `roll_profile.py`, `alignment.py` and `controls.py` free of Home Assistant imports; the entity in `cover.py`
   turns its plans into service calls.
 - `*_pct` names hold positions in percent (0 closed, 100 open): whole numbers
   (`int`, like Home Assistant's `current_position`) where shades report or are

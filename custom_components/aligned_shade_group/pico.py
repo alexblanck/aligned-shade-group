@@ -2,32 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+
+from .controls import PicoButtons
 
 # Caseta names a Pico's button entities after the Pico, ending in the button's
 # name (such as "Living Room Pico On"). A shade Pico's Raise and Lower buttons
 # nudge shades, so they aren't used.
 _BUTTON_NAMES = {"open": "On", "stop": "Stop", "close": "Off"}
-
-
-@dataclass(frozen=True)
-class PicoButtons:
-    """Button entities of a Pico paired to the group's shades.
-
-    Stored in the group's settings as found when it was set up.
-    """
-
-    open: str
-    stop: str
-    close: str
-
-    def buttons(self) -> tuple[str, str, str]:
-        """All three button entities."""
-        return (self.open, self.stop, self.close)
 
 
 class PicoButtonsError(Exception):
