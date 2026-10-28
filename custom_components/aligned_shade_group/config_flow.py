@@ -449,10 +449,7 @@ class _GroupFlow(ConfigEntryBaseFlow):
                     + ", ".join(self._friendly_name(shade) for shade in ids)
                     for opening, ids in suggestions
                 ),
-                "controls": "".join(
-                    f"\n\n{self._describe_control(control)}"
-                    for control in self._controls
-                ),
+                "controls": self._describe_controls(),
             },
         )
 
@@ -588,6 +585,7 @@ class _GroupFlow(ConfigEntryBaseFlow):
             data_schema=vol.Schema(
                 {vol.Optional(FIELD_CONTROL): self._controls_selector(multiple=False)}
             ),
+            description_placeholders={"controls": self._describe_controls()},
             errors=errors,
         )
 
@@ -609,10 +607,13 @@ class _GroupFlow(ConfigEntryBaseFlow):
             data_schema=vol.Schema(
                 {vol.Optional(FIELD_CONTROLS): self._controls_selector(multiple=True)}
             ),
+            description_placeholders={"controls": self._describe_controls()},
         )
 
     def _controls_selector(self, multiple: bool) -> selector.SelectSelector:
-        """Picks saved Picos and scenes, by index, labeled one per line."""
+        """Picks saved Picos and scenes, by index, labeled by name (their
+        shades are listed above, as on the menu).
+        """
         return selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=[
@@ -662,6 +663,14 @@ class _GroupFlow(ConfigEntryBaseFlow):
             return "control_shades_not_in_group"
         return None
 
+    def _describe_controls(self) -> str:
+        """The Picos and scenes, for a screen's description: each starting a
+        new paragraph.
+        """
+        return "".join(
+            f"\n\n{self._describe_control(control)}" for control in self._controls
+        )
+
     def _describe_control(self, control: dict[str, Any]) -> str:
         """A Pico or scene, for the menu, as Markdown: its name in bold (with a
         scene's position), then its shades as a list.
@@ -670,9 +679,9 @@ class _GroupFlow(ConfigEntryBaseFlow):
         return f"**{name}**{position}" + "".join(f"\n- {shade}" for shade in shades)
 
     def _control_label(self, control: dict[str, Any]) -> str:
-        """A Pico or scene on one line, for picking it."""
-        name, position, shades = self._control_parts(control)
-        return f"{name}{position}: {', '.join(shades)}"
+        """A Pico or scene's name (with a scene's position), for picking it."""
+        name, position, _ = self._control_parts(control)
+        return f"{name}{position}"
 
     def _control_parts(self, control: dict[str, Any]) -> tuple[str, str, list[str]]:
         """A Pico or scene's name, a scene's position (" → 100%", or ""), and

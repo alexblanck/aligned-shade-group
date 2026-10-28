@@ -131,12 +131,14 @@
       },
       "change_control": {
         "title": "Change a Pico or scene",
+        "description": "### Configured{controls}\n\n---",
         "data": {
           "control": "Pico or scene"
         }
       },
       "remove_controls": {
         "title": "Remove Picos or scenes",
+        "description": "### Configured{controls}\n\n---",
         "data": {
           "controls": "Remove"
         }
@@ -290,12 +292,14 @@
       },
       "change_control": {
         "title": "Change a Pico or scene",
+        "description": "### Configured{controls}\n\n---",
         "data": {
           "control": "Pico or scene"
         }
       },
       "remove_controls": {
         "title": "Remove Picos or scenes",
+        "description": "### Configured{controls}\n\n---",
         "data": {
           "controls": "Remove"
         }
